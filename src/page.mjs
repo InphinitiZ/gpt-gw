@@ -458,8 +458,6 @@ $('enter').onclick = async () => {
 }
 $('tok') && $('tok').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enter').click() })
 $('refresh').onclick = load
-$('addbtn').onclick = () => { location.href = '/enroll' }
-
 $('logout').onclick = async () => { await fetch('/admin/logout', { method: 'POST' }); $('panel').style.display='none'; $('login').style.display='block' }
 load()
 </script>
