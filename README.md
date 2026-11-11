@@ -5,11 +5,59 @@ ChatGPT 订阅号共享网关（仓库目录仍叫 `gpt-gw`）。
 把公司报销的 ChatGPT 订阅号做成一个共享池，让 Codex 这类客户端用**标准 API key** 接入。
 同事不需要登录 ChatGPT，只需要一个网关发的 `gw_` key。
 
+> ⚠️ 这套做法不在 OpenAI 的授权范围内，和官方合作方模式有本质区别。
+> 上线前先读[风险与合规](#风险与合规)。
+
 零依赖，Node ≥ 20 直接跑。
 
 ```bash
-node src/server.mjs          # 默认 http://127.0.0.1:8787/enroll
+node src/server.mjs          # 默认 http://127.0.0.1:8787/ ，可用 GW_PORT 改
 ```
+
+## 风险与合规
+
+**先说清楚：这套东西技术上可行，但不在 OpenAI 的授权范围内。** 用之前要知道自己在做什么。
+
+### 官方其实有一条路
+
+2026-09-29，OpenAI 推出 “Sign in with ChatGPT”：订阅额度可以在 **16 个合作 app** 里使用，
+按“每周额度的一个百分比”给每个 app 设上限，用掉的量算在订阅者自己的额度里。
+[Hermes Agent 就在合作名单里](https://learn.chatgpt.com/docs/sign-in-with-chatgpt#partners)，
+规则细节见[这篇报道](https://mixed-news.com/en/chatgpt-plus-allowance-16-partner-apps-no-api-key/)。
+
+所以 Hermes 能用订阅额度，靠的是**合作资格**，不是那套设备码登录的技术。技术我们也有，
+而且已经跑通——差别在谁花谁的额度。
+
+### 我们和官方模式的区别
+
+| | 合作方（Hermes 等） | 本网关 |
+|---|---|---|
+| 账号 | 登录者本人的号 | 一个号服务多个人 |
+| 额度归属 | 花登录者自己的额度 | Alice 的请求可能花 Bob 的额度 |
+| 出口 | 用户各自的网络 | 所有账号共用一个出口 IP |
+
+第三条最容易出事：官方模式下每个用户的流量和他的日常使用没有区别；这里 N 个账号的流量
+从同一台机器出去，“这些账号共用一个出口”本身就是可识别的信号。平台有能力把同一 IP
+关联到多个账号，也能看出某个号的用量从“一个人”变成“三个人”。
+
+### 已经做的降信号设计
+
+- 自己的号优先，用完才借别人的，不主动跨账号分摊
+- 借号后粘住不来回跳，让每个号的流量看起来连续
+- `originator` 用 `alpha-mind` 自己的名字，不冒充 `codex_cli_rs`
+- `store: false`，不往号主的历史里写对话
+- 退出不调 revoke（实测会登出该账号全部设备），不惊动号主其它登录
+
+这些能压低信号，**不能消除风险**。真要降低，最有效也最便宜的一步是：
+**把网关跑在办公网，不要放云主机**——让出口 IP 和团队日常使用混在一起，
+而不是一整个机房 IP 驱动所有账号。
+
+### 合规的替代路径
+
+- 同事各自用那 16 个合作 app 里的某一个（Hermes、Warp、Vercel 等），登自己的号，额度各归各的
+- 换 ChatGPT Business / Enterprise 席位，用工作区级额度
+
+两条都不需要维护账号池，代价是“打不满”。这是产品决策，不是技术问题。
 
 ## 它提供什么
 
@@ -17,9 +65,12 @@ node src/server.mjs          # 默认 http://127.0.0.1:8787/enroll
 |---|---|
 | `POST /v1/responses` | OpenAI Responses 协议，Codex（`wire_api = "responses"`）和其他客户端都走这个 |
 | `POST /backend-api/codex/responses` | 同一个处理器的别名，给原生 CLI 的 `chatgpt_base_url` 用 |
-| `GET /v1/models` | 返回 `GW_MODELS` 里配的模型列表 |
-| `GET /enroll` | 自助授权页 |
-| `GET /api/pool` | 池子现状（账号做过脱敏，key 不出现） |
+| `GET /v1/models` | 从池账号实时拉上游模型目录（缓存 10 分钟，失败回退 `GW_MODELS`） |
+| `GET /` | 按登录态分流：落地页 / 302 到 `/me` |
+| `GET /enroll` | 授权页 |
+| `GET /me` | 个人面板 |
+| `GET /admin` | 管理台 |
+| `GET /api/pool` | 池子现状（账号脱敏，key 不出现） |
 | `GET /healthz` | 存活探针 |
 
 注意：上游要求 `input` 必须是数组（`[{"type":"message",...}]`），传字符串会直接 400。
