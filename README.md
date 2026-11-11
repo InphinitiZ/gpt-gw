@@ -44,7 +44,7 @@ node src/server.mjs          # 默认 http://127.0.0.1:8787/ ，可用 GW_PORT �
 
 - 自己的号优先，用完才借别人的，不主动跨账号分摊
 - 借号后粘住不来回跳，让每个号的流量看起来连续
-- `originator` 用 `gpt-gw`，不冒充 `codex_cli_rs`
+- `originator` / `User-Agent` 用 `alpha-mind`，不冒充 `codex_cli_rs`
 - `store: false`，不往号主的历史里写对话
 - 退出不调 revoke（实测会登出该账号全部设备），不惊动号主其它登录
 
@@ -58,6 +58,16 @@ node src/server.mjs          # 默认 http://127.0.0.1:8787/ ，可用 GW_PORT �
 - 换 ChatGPT Business / Enterprise 席位，用工作区级额度
 
 两条都不需要维护账号池，代价是“打不满”。这是产品决策，不是技术问题。
+
+## 命名
+
+两个名字是分开的：
+
+- **仓库 / 页面 / 配置片段** 叫 `gpt-gw`
+- **发给 OpenAI 的身份**（`originator`、`User-Agent`）叫 `alpha-mind`
+
+后者是平台侧看到的“谁在调用”。用自己的名字比冒充 `codex_cli_rs` 干净，也避免把内部仓库名
+直接暴露给上游。两者都可以用环境变量覆盖（见文末）。
 
 ## 它提供什么
 
@@ -252,9 +262,8 @@ curl -X POST localhost:8788/api/debug/fault -d '{"clear":true}'
 | `GW_CHATGPT_BASE` | `https://chatgpt.com` | 上游 |
 | `GW_AUTH_BASE` | `https://auth.openai.com` | OAuth |
 | `GW_MODELS` | `gpt-6-astra` | 模型目录拉取失败时的兜底列表 |
-| `GW_CLIENT_LABEL` | `gpt-gw` | 上游身份：originator 与 UA 的前缀 |
-| `GW_ORIGINATOR` | 同 `GW_CLIENT_LABEL` | 单独覆盖 `originator` 头 |
-| `GW_CLIENT_UA` | `<label>/0.1.0` | 单独覆盖 `User-Agent` |
+| `GW_ORIGINATOR` | `alpha-mind` | 发给 OpenAI 的 `originator` 头 |
+| `GW_CLIENT_UA` | `alpha-mind/0.1.0` | 发给 OpenAI 的 `User-Agent` |
 | `GW_FORCE_STORE_FALSE` | `1` | 设 `0` 关闭强制 |
 | `GW_EXHAUST_COOLDOWN_MS` | `900000` | 429 后冷却时长 |
 

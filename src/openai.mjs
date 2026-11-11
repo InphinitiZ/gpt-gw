@@ -4,14 +4,16 @@
 const CLIENT_ID = process.env.GW_CLIENT_ID ?? 'app_EMoamEEZ73f0CkXaXp7hrann'
 const AUTH_BASE = process.env.GW_AUTH_BASE ?? 'https://auth.openai.com'
 const CHATGPT_BASE = process.env.GW_CHATGPT_BASE ?? 'https://chatgpt.com'
-const CODEX_UA = process.env.GW_CODEX_UA ?? 'codex_cli_rs/0.163.0'
+const CODEX_UA = process.env.GW_CODEX_UA ?? 'alpha-mind/0.1.0'
+// 对 OpenAI 的所有调用统一用这个身份，和转发层保持一致
+const ORIGINATOR = process.env.GW_ORIGINATOR ?? 'alpha-mind'
 
 // 模仿官方客户端的请求形态。deviceauth 端点有 Cloudflare 机器人策略，
 // 出口 IP 不干净时会直接返回 403 HTML 挑战页而不是 JSON。
 const BASE_HEADERS = {
   'content-type': 'application/json',
   'user-agent': CODEX_UA,
-  originator: 'codex_cli_rs',
+  originator: ORIGINATOR,
 }
 
 export class UpstreamError extends Error {
@@ -103,7 +105,7 @@ export async function exchangeDeviceCode({ code, codeVerifier }) {
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
         'user-agent': CODEX_UA,
-        originator: 'codex_cli_rs',
+        originator: ORIGINATOR,
       },
       body: form,
       signal: AbortSignal.timeout(20000),
@@ -191,7 +193,7 @@ export async function fetchCodexModels(accessToken, accountId) {
     headers: {
       authorization: `Bearer ${accessToken}`,
       'chatgpt-account-id': accountId,
-      originator: 'codex_cli_rs',
+      originator: ORIGINATOR,
       'user-agent': CODEX_UA,
       accept: 'application/json',
     },
@@ -213,7 +215,7 @@ export async function fetchUsage(accessToken, accountId, { base } = {}) {
     headers: {
       authorization: `Bearer ${accessToken}`,
       'chatgpt-account-id': accountId,
-      originator: 'gpt-gw',
+      originator: ORIGINATOR,
       'user-agent': CODEX_UA,
       accept: 'application/json',
     },
@@ -278,7 +280,7 @@ export async function revokeToken(refreshToken) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      originator: 'gpt-gw',
+      originator: ORIGINATOR,
       'user-agent': CODEX_UA,
     },
     body,
