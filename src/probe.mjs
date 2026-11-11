@@ -42,9 +42,14 @@ async function probeAccount(account) {
       }
     }
 
+    // limit_reached 比 used_percent >= 100 更权威：允许超一点或按模型限制时数字不一定到 100
+    const q = usage ?? account.quota ?? null
+    const exhaustedUntil = q?.limitReached ? (q.primary?.resetAt ?? 0) * 1000 || Date.now() + 15 * 60 * 1000 : null
+
     updateAccount(account.id, {
       status: 'ok',
-      quota: usage ?? account.quota ?? null,
+      quota: q,
+      exhaustedUntil,
       quotaAt: Date.now(),
       lastProbeAt: at,
       lastError: null,

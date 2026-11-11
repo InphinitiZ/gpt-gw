@@ -232,25 +232,38 @@ function safeJson(text) {
   }
 }
 
-// 形如 { rate_limit: { primary_window: { used_percent }, secondary_window: {...} } }
+// 真实返回长这样（2026-11 实测）：
+// { rate_limit: { allowed, limit_reached,
+//     primary_window: { used_percent, limit_window_seconds, reset_after_seconds, reset_at },
+//     secondary_window: null },
+//   credits: { has_credits, unlimited, balance },
+//   rate_limit_reset_credits: { available_count },
+//   model_usage: { <model>: { available } } }
 export function extractQuota(payload) {
   const quota = {}
-  const windows = [payload.rate_limit ?? {}, ...(payload.additional_rate_limits ?? []).map((x) => x?.rate_limit ?? {})]
-  const pick = (name) => {
-    let used = null
-    let resetAfter = null
-    for (const w of windows) {
-      const win = w[name]
-      if (!win) continue
-      if (typeof win.used_percent === 'number') used = Math.max(used ?? 0, win.used_percent)
-      if (typeof win.reset_after_seconds === 'number') resetAfter = win.reset_after_seconds
+  const rl = payload.rate_limit ?? {}
+  const windowOf = (name) => {
+    const win = rl[name]
+    if (!win) return null
+    return {
+      usedPercent: typeof win.used_percent === 'number' ? win.used_percent : null,
+      windowSeconds: win.limit_window_seconds ?? null,
+      resetAfterSec: win.reset_after_seconds ?? null,
+      resetAt: win.reset_at ?? null,
+      limitReached: Boolean(rl.limit_reached),
     }
-    return used === null && resetAfter === null ? null : { usedPercent: used, resetAfterSec: resetAfter }
   }
-  const primary = pick('primary_window')
-  const secondary = pick('secondary_window')
+  const primary = windowOf('primary_window')
+  const secondary = windowOf('secondary_window')
   if (primary) quota.primary = primary
   if (secondary) quota.secondary = secondary
+  if (typeof rl.limit_reached === 'boolean') quota.limitReached = rl.limit_reached
+  if (typeof rl.allowed === 'boolean') quota.allowed = rl.allowed
+  if (payload.credits?.balance != null) quota.creditsBalance = Number(payload.credits.balance)
+  if (payload.rate_limit_reset_credits?.available_count != null) {
+    quota.resetCredits = payload.rate_limit_reset_credits.available_count
+  }
+  if (payload.plan_type) quota.planType = payload.plan_type
   return Object.keys(quota).length ? quota : null
 }
 

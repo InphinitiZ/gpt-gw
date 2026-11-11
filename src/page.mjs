@@ -60,7 +60,7 @@ export function enrollPage() {
   </section>
 
   <section id="s3">
-    <p class="ok">已加入共享池。</p>
+    <p class="ok" id="done">已加入共享池。</p>
     <div class="warn" id="unresolved" style="display:none">
       号已经入库，但没从 token 里解析出账号 id。先别拿去用，把 <code class="inline">data/last-device-token.json</code> 发给管理员。
     </div>
@@ -144,11 +144,13 @@ async function tick() {
   if (j.status === 'complete') {
     if (j.account && j.account.accountIdResolved === false) $('unresolved').style.display = 'block'
     if (!j.key) {
-      $('keyhint').textContent = '你已经有 key 了，账号已加到同一个身份下，沿用原来的 key（指纹 ' + j.keyFingerprint + '）：'
-      $('key').textContent = '（不重复显示）'
+      const what = j.account.created ? '新号已加入你的托管' : '这个号原本就在池里，凭据已更新'
+      $('keyhint').textContent = what + '；沿用你原来的 key（指纹 ' + j.keyFingerprint + '），不重复显示。'
+      $('key').textContent = '（沿用原 key，无需更新本地配置）'
     } else {
       $('key').textContent = j.key
     }
+    $('done').textContent = j.account.created ? '已加入共享池。' : '凭据已更新。'
     $('cfg').textContent = [
       'model_provider = "alpha-mind"',
       '',
@@ -291,6 +293,12 @@ function pct(q) {
   const parts = []
   if (p !== null) parts.push('周 ' + p + '%')
   if (s !== null) parts.push('5h ' + s + '%')
+  if (q.primary && q.primary.resetAfterSec) {
+    const h = Math.round(q.primary.resetAfterSec / 3600)
+    parts.push(h >= 1 ? h + ' 小时后重置' : Math.round(q.primary.resetAfterSec / 60) + ' 分钟后重置')
+  }
+  if (q.resetCredits) parts.push('重置券 ' + q.resetCredits)
+  if (q.limitReached) parts.push('已触顶')
   return parts.length ? esc(parts.join(' · ')) : '<span class="muted">—</span>'
 }
 
