@@ -376,6 +376,8 @@ $('enter').onclick = async () => {
 }
 $('tok') && $('tok').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enter').click() })
 $('refresh').onclick = load
+$('addbtn').onclick = () => { location.href = '/enroll' }
+
 $('logout').onclick = async () => { await fetch('/admin/logout', { method: 'POST' }); $('panel').style.display='none'; $('login').style.display='block' }
 load()
 </script>
@@ -431,7 +433,10 @@ export function mePage() {
     </div>
     <p class="muted" id="keyline" style="margin:2px 0 0"></p>
 
-    <h2>我托管的号</h2>
+    <div class="row" style="align-items:baseline">
+      <h2 class="grow">我托管的号</h2>
+      <button id="addbtn" style="font-size:13px;padding:4px 10px">+ 加一个号</button>
+    </div>
     <div id="accounts"></div>
 
     <h2>本周用量</h2>
@@ -479,9 +484,10 @@ function render() {
 
   const list = me.accounts || []
   $('accounts').innerHTML = list.length ? list.map((a) => {
+    const reauth = a.status === 'dead' ? '<button data-reauth="1">重新授权</button> ' : ''
     const act = me.pendingExit
       ? '<span class="muted" style="font-size:13px">退出申请审批中</span>'
-      : '<button class="danger" data-exit="' + esc(a.id) + '">退出托管</button>'
+      : reauth + '<button class="danger" data-exit="' + esc(a.id) + '">退出托管</button>'
     return '<div class="card"><div class="row">' +
       '<div class="grow"><strong>' + esc(a.label) + '</strong><div class="muted" style="font-size:13px">' +
       '被他人借用 ' + (a.borrowed || 0) + ' 次' + (pct(a.quota) ? ' · ' + esc(pct(a.quota)) : '') + '</div></div>' +
@@ -503,6 +509,7 @@ async function load() {
 }
 
 document.addEventListener('click', async (e) => {
+  if (e.target.dataset.reauth) { location.href = '/enroll'; return }
   const id = e.target.dataset.exit
   if (!id) return
   const reason = prompt('退出原因（可选）') ?? ''
@@ -524,12 +531,76 @@ $('loginbtn').onclick = async () => {
   load()
 }
 
+$('addbtn').onclick = () => { location.href = '/enroll' }
+
 $('logout').onclick = async () => {
   await fetch('/api/logout', { method: 'POST' })
   location.reload()
 }
 
 load()
+</script>
+</body>
+</html>`
+}
+
+export function landingPage() {
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>alpha-mind</title>
+<style>
+  :root { color-scheme: light dark; --fg:#111; --muted:#666; --line:#e3e3e3; --bg:#fff; --ok:#0a7c53; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e8e8e8; --muted:#999; --line:#2a2a2a; --bg:#111; --ok:#39d29a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:64px 20px 80px; }
+  h1 { font-size:22px; margin:0 0 6px; letter-spacing:-.01em; }
+  p.lede { color:var(--muted); margin:0 0 36px; }
+  .card { border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:14px; }
+  .card h2 { font-size:15px; margin:0 0 4px; }
+  .card p { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  input { font:inherit; padding:9px 11px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--fg); width:100%; }
+  .row { display:flex; gap:8px; }
+  button { font:inherit; padding:9px 16px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--ok); border-color:var(--ok); color:#fff; }
+  .err { color:#c0392b; font-size:13px; min-height:20px; margin:8px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>alpha-mind</h1>
+  <p class="lede">把 ChatGPT 订阅号放进共享池，按需要分配给团队使用。</p>
+
+  <div class="card">
+    <h2>已经有 key</h2>
+    <p>用网关发给你的 key 登录，查看托管状态和用量。</p>
+    <div class="row">
+      <input id="keyin" type="password" placeholder="gw_...">
+      <button class="primary" id="loginbtn">登录</button>
+    </div>
+    <p class="err" id="err"></p>
+  </div>
+
+  <div class="card">
+    <h2>第一次来</h2>
+    <p>把你自己的 ChatGPT 号交进池子，同时获得一把 key——有这个号在用，你才能用别人的额度。</p>
+    <button id="enrollbtn">开始交号</button>
+  </div>
+</main>
+<script>
+document.getElementById('loginbtn').onclick = async () => {
+  const r = await fetch('/api/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: document.getElementById('keyin').value.trim() })
+  })
+  if (r.ok) location.href = '/me'
+  else document.getElementById('err').textContent = 'key 不对'
+}
+document.getElementById('keyin').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('loginbtn').click() })
+document.getElementById('enrollbtn').onclick = () => { location.href = '/enroll' }
 </script>
 </body>
 </html>`

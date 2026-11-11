@@ -3,7 +3,7 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { timingSafeEqual } from 'node:crypto'
-import { enrollPage, adminPage, mePage } from './page.mjs'
+import { enrollPage, adminPage, mePage, landingPage } from './page.mjs'
 import { startDeviceCode, pollDeviceCode, exchangeDeviceCode, extractAccountId, extractEmail, describeTokenShape, fetchCodexModels, UpstreamError } from './openai.mjs'
 import {
   addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount, flush,
@@ -376,10 +376,18 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/healthz') {
       return json(res, 200, { ok: true, accounts: listAccounts().length, keys: listKeys().length })
     }
-    if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/enroll')) {
-      const html = enrollPage()
+    if (req.method === 'GET' && url.pathname === '/') {
+      // 已登录直接进面板，不让人再看到「新用户」入口
+      if (currentUser(req)) {
+        res.writeHead(302, { location: '/me', 'cache-control': 'no-store' })
+        return res.end()
+      }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
-      return res.end(html)
+      return res.end(landingPage())
+    }
+    if (req.method === 'GET' && url.pathname === '/enroll') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      return res.end(enrollPage())
     }
     if (req.method === 'POST' && url.pathname === '/api/enroll/start') return await handleStart(req, res)
     if (req.method === 'GET' && url.pathname === '/api/enroll/status') return await handleStatus(req, res, url)
