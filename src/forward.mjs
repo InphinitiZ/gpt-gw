@@ -2,7 +2,7 @@ import { Readable } from 'node:stream'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { refreshTokens, extractAccountId, claimsOf, UpstreamError, upstream } from './openai.mjs'
-import { pickAccount, updateAccount } from './store.mjs'
+import { pickAccount, updateAccount, recordUsage } from './store.mjs'
 
 // 同一个号并发刷新会互相踢下线：所有刷新必须串行化。
 const refreshing = new Map()
@@ -270,7 +270,8 @@ export async function proxyResponses(req, res, person, rawBody) {
       return res.end(text)
     }
 
-    updateAccount(account.id, { lastUsedAt: Date.now(), status: 'ok' })
+    recordUsage(person, account.id)
+    if (account.status !== 'ok') updateAccount(account.id, { status: 'ok' })
 
     res.writeHead(upstreamRes.status, {
       'content-type': upstreamRes.headers.get('content-type') ?? (streaming ? 'text/event-stream' : 'application/json'),

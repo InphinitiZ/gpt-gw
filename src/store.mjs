@@ -6,7 +6,15 @@ const STATE_PATH = resolve(DATA_DIR, 'state.json')
 
 mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 })
 
-const empty = () => ({ version: 2, accounts: [], keys: [], assignments: {} })
+const empty = () => ({
+  version: 3,
+  accounts: [],
+  keys: [],
+  assignments: {},
+  sessions: [],
+  exitRequests: [],
+  usage: {},
+})
 
 let state = load()
 
@@ -27,6 +35,30 @@ function persist() {
   writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 })
   chmodSync(tmp, 0o600)
   renameSync(tmp, STATE_PATH)
+  dirty = false
+}
+
+// 计数类更新先攒 1 秒，避免每个请求都重写整个 state。
+// 结构性变更（账号、key、申请、session）仍然立刻落盘。
+let dirty = false
+let flushTimer = null
+
+function markDirty() {
+  dirty = true
+  if (flushTimer) return
+  flushTimer = setTimeout(() => {
+    flushTimer = null
+    if (dirty) persist()
+  }, 1000)
+  flushTimer.unref?.()
+}
+
+export function flush() {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  if (dirty) persist()
 }
 
 export function dataDir() {
@@ -65,6 +97,7 @@ export function addAccount({ label, owner, accountId, email, refreshToken, acces
     status: 'ok',
     exhaustedUntil: null,
     lastUsedAt: null,
+    servedBy: {},
     createdAt: now,
     updatedAt: now,
   }
@@ -169,4 +202,173 @@ export function listKeys() {
 export function maskAccountId(id) {
   if (!id) return null
   return id.length <= 8 ? '***' : `${id.slice(0, 4)}…${id.slice(-4)}`
+}
+
+// ── 登录会话 ──────────────────────────────────────────────────────────────
+// 只用 key 登录，不接外部账号体系：会话就是「这个人持有一把有效 key」的证明。
+
+export function createSession(person, { days = 30 } = {}) {
+  const session = {
+    id: `sess_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`,
+    person,
+    createdAt: new Date().toISOString(),
+    expiresAt: Date.now() + days * 86400_000,
+  }
+  state.sessions.push(session)
+  persist()
+  return session
+}
+
+export function sessionById(id) {
+  const session = state.sessions.find((s) => s.id === id)
+  if (!session) return null
+  if (session.expiresAt < Date.now()) {
+    state.sessions = state.sessions.filter((s) => s.id !== id)
+    persist()
+    return null
+  }
+  return session
+}
+
+export function deleteSession(id) {
+  state.sessions = state.sessions.filter((s) => s.id !== id)
+  persist()
+}
+
+export function deleteSessionsFor(person) {
+  state.sessions = state.sessions.filter((s) => s.person !== person)
+  persist()
+}
+
+// ── 用量计数 ──────────────────────────────────────────────────────────────
+
+export function recordUsage(person, accountId) {
+  const now = new Date().toISOString()
+  const usage = state.usage[person] ?? { requests: 0 }
+  usage.requests += 1
+  usage.lastAt = now
+  state.usage[person] = usage
+
+  const account = state.accounts.find((a) => a.id === accountId)
+  if (account) {
+    account.servedBy ??= {}
+    account.servedBy[person] = (account.servedBy[person] ?? 0) + 1
+    account.lastUsedAt = Date.now()
+  }
+  markDirty()
+}
+
+export function usageFor(person) {
+  return state.usage[person] ?? { requests: 0, lastAt: null }
+}
+
+// 号主关心的是「我这个号被别人用了多少次」，自己用自己的不算
+export function borrowedByOthers(account) {
+  const served = account.servedBy ?? {}
+  return Object.entries(served)
+    .filter(([person]) => person !== account.owner)
+    .reduce((sum, [, count]) => sum + count, 0)
+}
+
+// ── 退出托管申请 ──────────────────────────────────────────────────────────
+
+function newId(prefix) {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`
+}
+
+export function pendingExitFor(person) {
+  return state.exitRequests.find((r) => r.person === person && r.status === 'pending') ?? null
+}
+
+export function createExitRequest({ person, accountId, reason }) {
+  // 幂等：已有待审批申请时直接返回原申请，避免用户连点造出一堆
+  const existing = pendingExitFor(person)
+  if (existing) return existing
+  const request = {
+    id: newId('exit'),
+    person,
+    accountId,
+    reason: reason ?? '',
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    decidedAt: null,
+    decidedBy: null,
+    note: null,
+  }
+  state.exitRequests.push(request)
+  persist()
+  return request
+}
+
+export function cancelExitRequest(person) {
+  const request = pendingExitFor(person)
+  if (!request) return null
+  request.status = 'cancelled'
+  request.decidedAt = new Date().toISOString()
+  persist()
+  return request
+}
+
+export function listExitRequests(status = null) {
+  return state.exitRequests
+    .filter((r) => (status ? r.status === status : true))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+}
+
+export function decideExitRequest(id, { status, note, admin }) {
+  const request = state.exitRequests.find((r) => r.id === id)
+  if (!request || request.status !== 'pending') return null
+  request.status = status
+  request.note = note ?? null
+  request.decidedBy = admin ?? 'admin'
+  request.decidedAt = new Date().toISOString()
+  persist()
+  return request
+}
+
+// ── 账号与 key 的运维操作 ─────────────────────────────────────────────────
+
+export function removeAccount(id) {
+  const account = state.accounts.find((a) => a.id === id)
+  if (!account) return null
+  state.accounts = state.accounts.filter((a) => a.id !== id)
+  for (const [person, assignment] of Object.entries(state.assignments)) {
+    if (assignment.accountId === id) delete state.assignments[person]
+  }
+  persist()
+  return account
+}
+
+export function revokeKeyFor(person) {
+  const before = state.keys.length
+  state.keys = state.keys.filter((k) => k.person !== person)
+  state.sessions = state.sessions.filter((s) => s.person !== person)
+  if (state.keys.length !== before) persist()
+  return before - state.keys.length
+}
+
+// key 只存哈希，后台只能给出指纹，不能还原原文
+export function keyFingerprintFor(person) {
+  const key = state.keys.find((k) => k.person === person)
+  if (!key) return null
+  return { id: key.id, fingerprint: key.hash.slice(0, 8), createdAt: key.createdAt }
+}
+
+export function listPeople() {
+  const people = new Set([...state.keys.map((k) => k.person), ...state.accounts.map((a) => a.owner)])
+  return [...people].filter(Boolean).sort().map((person) => {
+    const key = keyFingerprintFor(person)
+    const account = state.accounts.find((a) => a.owner === person) ?? null
+    const assignment = assignmentFor(person)
+    return {
+      person,
+      key,
+      account: account
+        ? { id: account.id, label: account.label, email: account.email, status: account.status, borrowed: borrowedByOthers(account) }
+        : null,
+      assignedTo: assignment?.accountId ?? null,
+      requests: usageFor(person).requests,
+      pendingExit: Boolean(pendingExitFor(person)),
+    }
+  })
 }

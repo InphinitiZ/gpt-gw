@@ -2,7 +2,9 @@ import { createServer } from 'node:http'
 import { randomUUID, randomBytes, createHash } from 'node:crypto'
 import { enrollPage } from './page.mjs'
 import { startDeviceCode, pollDeviceCode, exchangeDeviceCode, extractAccountId, extractEmail, describeTokenShape, fetchCodexModels, UpstreamError } from './openai.mjs'
-import { addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount } from './store.mjs'
+import {
+  addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount, flush,
+} from './store.mjs'
 import { proxyResponses, freshAccount, setFault, clearFaults } from './forward.mjs'
 
 const HOST = process.env.GW_HOST ?? '127.0.0.1'
@@ -320,6 +322,13 @@ setInterval(() => {
     if (now > session.expiresAt + 60_000) sessions.delete(sid)
   }
 }, 60_000).unref()
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    flush()
+    process.exit(0)
+  })
+}
 
 server.listen(PORT, HOST, () => {
   console.log(`alpha-mind enrollment on http://${HOST}:${PORT}/enroll`)
