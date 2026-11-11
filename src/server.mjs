@@ -25,7 +25,7 @@ import { startDeviceCode, pollDeviceCode, exchangeDeviceCode, extractAccountId, 
 import {
   addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount, flush,
   dataDir, listPeople, listExitRequests,
-  createSession, sessionById, accountByAccountId, personHasKey, ensureKey, deleteSession, usageFor,
+  createSession, sessionById, accountByAccountId, personHasKey, ensureKey, deleteSession, usageFor, deleteSessionsFor,
   createPerson, personInfo,
   accountById, createExitRequest, cancelExitRequest, pendingExitFor,
 } from './store.mjs'
@@ -526,6 +526,24 @@ const server = createServer(async (req, res) => {
           ? approveExit({ requestId: id, admin: 'admin', note: body.note ?? null })
           : rejectExit({ requestId: id, admin: 'admin', note: body.note ?? '' })
       return json(res, result.ok ? 200 : 400, result)
+    }
+    if (req.method === 'POST' && url.pathname === '/api/admin/reset-key') {
+      if (!isAdmin(req)) return json(res, 401, { message: '需要管理员登录' })
+      const body = await readBody(req)
+      const person = String(body.person ?? '')
+      const target = listPeople().find((p) => p.person === person)
+      if (!target) return json(res, 404, { message: '找不到这个人' })
+      const plaintext = `gw_${randomBytes(24).toString('hex')}`
+      const accountId = target.accounts?.[0]?.id ?? null
+      rotateKey({ hash: hashKey(plaintext), person, accountId })
+      deleteSessionsFor(person)
+      console.log(`admin: 重置了 ${target.displayName} 的 key`)
+      return json(res, 200, {
+        ok: true,
+        person,
+        key: plaintext,
+        keyFingerprint: hashKey(plaintext).slice(0, 8),
+      })
     }
     if (req.method === 'POST' && url.pathname === '/api/admin/revoke') {
       if (!isAdmin(req)) return json(res, 401, { message: '需要管理员登录' })

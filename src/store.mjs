@@ -279,7 +279,7 @@ export function listAccounts() {
     borrowed: borrowedByOthers(a),
     assignedTo: Object.entries(state.assignments)
       .filter(([, v]) => v.accountId === a.id)
-      .map(([person]) => person),
+      .map(([person]) => personInfo(person).displayName),
     updatedAt: a.updatedAt,
   }))
 }

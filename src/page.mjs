@@ -317,7 +317,7 @@ export function adminPage() {
 
     <h2>托管人</h2>
     <table><thead><tr>
-      <th>姓名</th><th>自己的号</th><th>当前在用</th><th>本周请求</th><th>key 指纹</th><th>待退出</th>
+      <th>姓名</th><th>自己的号</th><th>当前在用</th><th>本周请求</th><th>key 指纹</th><th>待退出</th><th></th>
     </tr></thead><tbody id="people"></tbody></table>
 
     <h2>退出申请</h2>
@@ -401,7 +401,8 @@ async function load() {
 
   $('accounts').innerHTML = d.accounts.length ? d.accounts.map((a) => {
     const err = a.lastError ? '<pre>' + esc((a.lastError.code || '') + ' ' + (a.lastError.message || '')) + '</pre>' : ''
-    return '<tr><td><strong>' + esc(a.label) + '</strong><br><span class="muted">' + esc(a.email || a.accountId) + '</span></td>' +
+    const sub = a.email && a.email !== a.label ? '<br><span class="muted">' + esc(a.email) + '</span>' : ''
+    return '<tr><td><strong>' + esc(a.label) + '</strong>' + sub + '</td>' +
       '<td>' + badge(a.status, a.exhausted) + (err ? '<br>' + err : '') + '</td>' +
       '<td>' + pct(a.quota) + '</td>' +
       '<td>' + ago(a.lastProbeAt) + '</td>' +
@@ -411,12 +412,16 @@ async function load() {
   }).join('') : '<tr><td colspan="7" class="empty">池子里还没有号</td></tr>'
 
   $('people').innerHTML = d.people.length ? d.people.map((p) => {
-    const own = p.account ? esc(p.account.label) + '（被借 ' + p.account.borrowed + ' 次）' : '<span class="muted">无</span>'
+    const mine = p.accounts || []
+    const own = mine.length
+      ? mine.map((a) => esc(a.label) + '（被借 ' + (a.borrowed || 0) + ' 次）').join('<br>')
+      : '<span class="muted">无</span>'
     const using = p.assignedTo ? (p.assignedReason === 'own' ? '<span class="ok">自己的号</span>' : '<span class="warn">借别人的号</span>') : '<span class="muted">—</span>'
     return '<tr><td>' + esc(p.displayName || p.person) + '</td><td>' + own + '</td><td>' + using + '</td>' +
       '<td>' + p.requests + '</td><td class="muted">' + esc(p.key ? p.key.fingerprint : '无 key') + '</td>' +
-      '<td>' + (p.pendingExit ? '<span class="warn">有</span>' : '<span class="muted">—</span>') + '</td></tr>'
-  }).join('') : '<tr><td colspan="6" class="empty">还没有人</td></tr>'
+      '<td>' + (p.pendingExit ? '<span class="warn">有</span>' : '<span class="muted">—</span>') + '</td>' +
+      '<td><button data-reset="' + esc(p.person) + '" data-name="' + esc(p.displayName || p.person) + '">重置 key</button></td></tr>'
+  }).join('') : '<tr><td colspan="7" class="empty">还没有人</td></tr>'
 
   const pend = d.exitRequests || []
   $('exits').innerHTML = pend.length ? pend.map((r) => {
@@ -438,12 +443,24 @@ async function act(url, body, confirmText) {
   load()
 }
 
-document.addEventListener('click', (e) => {
+document.addEventListener('click', async (e) => {
   const t = e.target
   if (t.dataset.approve) act('/api/admin/exit/' + t.dataset.approve, { action: 'approve', note: '' })
   if (t.dataset.reject) {
     const note = prompt('驳回理由（必填）')
     if (note) act('/api/admin/exit/' + t.dataset.reject, { action: 'reject', note })
+  }
+  if (t.dataset.reset) {
+    const name = t.dataset.name
+    if (!confirm('重置「' + name + '」的 key？旧 key 会立刻失效，对方所有已登录的页面会被登出，需要把新 key 发给他。')) return
+    const r = await fetch('/api/admin/reset-key', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ person: t.dataset.reset })
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { alert(j.message || '重置失败'); return }
+    prompt('新 key（只显示这一次，复制给对方）：', j.key)
+    load()
   }
   if (t.dataset.revoke) {
     const msg = '强制撤销「' + t.dataset.label + '」？\\n\\n这会终止该账号所有设备上的登录（包括号主自己的手机和电脑），且不可恢复。'
