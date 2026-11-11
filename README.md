@@ -54,7 +54,11 @@ export GPT_GW_KEY=gw_xxx
 ## 网关内部怎么路由
 
 - 入站 `Authorization: Bearer gw_xxx` → sha256 → 查 key → 得到 `person`
-- `person` → 本周分配到的池账号（`assignments`，粘性）
+- `person` → 池账号（`assignments`，粘性），选择顺序：
+  1. **自己的号**（`reason = own`）——托管的号优先自己用
+  2. 自己的号耗尽/失效才借别人的（`reason = spill`），借上之后粘住
+  3. 自己的号恢复（续期、周额度重置）后自动回到自己家
+  4. 池子里没有可用号 → 503
 - 出站换成该账号的 `access_token` + `ChatGPT-Account-Id`，POST 到
   `https://chatgpt.com/backend-api/codex/responses`，SSE 原样回流
 

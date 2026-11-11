@@ -154,16 +154,31 @@ function isUsable(account, now = Date.now()) {
  */
 export function pickAccount(person) {
   const current = assignmentFor(person)
-  if (current) {
-    const account = state.accounts.find((a) => a.id === current.accountId)
-    if (account && isUsable(account)) return { account, reused: true }
+  const currentAccount = current ? state.accounts.find((a) => a.id === current.accountId) : null
+  const ownUsable = state.accounts.find((a) => a.owner === person && isUsable(a)) ?? null
+
+  // 1. 已经溢出到别人的号上：自己的号一恢复就回去，
+  //    否则留在当前这个号上（粘性优先于「立刻回自己家」，避免每 15 分钟来回跳）
+  if (currentAccount && isUsable(currentAccount)) {
+    if (current.reason === 'spill' && ownUsable) {
+      setAssignment(person, ownUsable.id, 'own')
+      return { account: ownUsable, reused: false }
+    }
+    return { account: currentAccount, reused: true }
   }
 
-  const candidates = state.accounts.filter((a) => isUsable(a))
+  // 2. 用自己的号，这是默认路径
+  if (ownUsable) {
+    setAssignment(person, ownUsable.id, 'own')
+    return { account: ownUsable, reused: false }
+  }
+
+  // 3. 自己的号用完 / 挂了，才借别人的
+  const candidates = state.accounts.filter((a) => isUsable(a) && a.owner !== person)
   if (!candidates.length) return { account: null, reused: false }
 
   const account = candidates.sort((x, y) => (x.lastUsedAt ?? 0) - (y.lastUsedAt ?? 0))[0]
-  setAssignment(person, account.id, current ? 'repin' : 'initial')
+  setAssignment(person, account.id, 'spill')
   return { account, reused: false }
 }
 
@@ -367,6 +382,7 @@ export function listPeople() {
         ? { id: account.id, label: account.label, email: account.email, status: account.status, borrowed: borrowedByOthers(account) }
         : null,
       assignedTo: assignment?.accountId ?? null,
+      assignedReason: assignment?.reason ?? null,
       requests: usageFor(person).requests,
       pendingExit: Boolean(pendingExitFor(person)),
     }
