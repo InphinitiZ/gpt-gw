@@ -1,3 +1,54 @@
+
+// 两个页面共用的接入说明。用 data-fill 占位，前端填 origin 和 key。
+const usageHtml = `
+  <h3>接入方式</h3>
+  <p class="hint">OpenAI Responses 协议，SSE 流式。认证一律 <code class="inline">Authorization: Bearer &lt;key&gt;</code>。</p>
+  <pre>POST <span data-fill="origin"></span>/v1/responses   对话（Responses 协议）
+GET  <span data-fill="origin"></span>/v1/models        模型列表
+Authorization: Bearer <span data-fill="key"></span></pre>
+
+  <h3>Codex CLI</h3>
+  <pre># ~/.codex/config.toml
+model_provider = "alpha-mind"
+
+[model_providers.alpha-mind]
+name = "alpha-mind"
+base_url = "<span data-fill="origin"></span>/v1"
+env_key = "GPT_GW_KEY"
+wire_api = "responses"
+
+# 然后
+export GPT_GW_KEY=<span data-fill="key"></span></pre>
+
+  <h3>Chatbox</h3>
+  <pre>API 模式：OpenAI Responses API 兼容
+API 主机：<span data-fill="origin"></span>/v1
+API 路径：/responses
+API 密钥：<span data-fill="key"></span>
+
+保存后点「获取」拉模型，再选一个开始对话。</pre>
+
+  <h3>curl</h3>
+  <pre>curl -N <span data-fill="origin"></span>/v1/responses \
+  -H "Authorization: Bearer <span data-fill="key"></span>" \
+  -H "content-type: application/json" \
+  -d '{"model":"gpt-6.1-sol","input":[{"type":"message","role":"user",
+       "content":[{"type":"input_text","text":"hi"}]}],"stream":true}'</pre>
+
+  <p class="hint">
+    注意：<code class="inline">input</code> 必须是数组，传字符串会 400；
+    <code class="inline">store</code> 会被强制改成 false（池号是别人在用，不落对方历史）；
+    可用模型以 <code class="inline">/v1/models</code> 为准，不同账号看到的可能不同。
+  </p>
+
+  <style>
+    .usage h3 { font-size:13px; color:var(--muted); margin:22px 0 8px; font-weight:600; }
+    .usage pre { background:rgba(127,127,127,.1); padding:12px 14px; border-radius:8px; overflow-x:auto; font-size:12.5px; line-height:1.6; margin:0; }
+    .usage code.inline { background:rgba(127,127,127,.14); padding:1px 5px; border-radius:4px; font-size:12.5px; }
+  </style>
+`
+
+
 export function enrollPage() {
   return `<!doctype html>
 <html lang="zh-CN">
@@ -66,9 +117,7 @@ export function enrollPage() {
     </div>
     <p class="hint" id="keyhint">这是你的网关 key，只显示这一次：</p>
     <pre id="key"></pre>
-    <p class="hint">写进 <code class="inline">~/.codex/config.toml</code>：</p>
-    <pre id="cfg"></pre>
-    <p class="hint">然后 <code class="inline">export GPT_GW_KEY=…</code> 就能用了。</p>
+    <div class="usage" id="usage">${usageHtml}</div>
     <div class="warn">
       建议本机不再 <code class="inline">codex login</code> 这个号。主要理由是请求会<strong>绕过网关</strong>——
       不粘连、吃不到 prompt cache、额度也不进池子的账。两边同时刷新 token 可能互相踢下线，
@@ -98,6 +147,10 @@ npx alpha-mind enroll     # 读取 ~/.codex/auth.json 并上传</pre>
 
 <script>
 const $ = (id) => document.getElementById(id)
+function fillUsage(key) {
+  document.querySelectorAll('[data-fill="origin"]').forEach((el) => { el.textContent = location.origin })
+  document.querySelectorAll('[data-fill="key"]').forEach((el) => { el.textContent = key || 'gw_你的key' })
+}
 const show = (id) => { for (const s of document.querySelectorAll('section')) s.classList.toggle('on', s.id === id) }
 let sid = null, timer = null
 
@@ -151,15 +204,7 @@ async function tick() {
       $('key').textContent = j.key
     }
     $('done').textContent = j.account.created ? '已加入共享池。' : '凭据已更新。'
-    $('cfg').textContent = [
-      'model_provider = "alpha-mind"',
-      '',
-      '[model_providers.alpha-mind]',
-      'name = "alpha-mind"',
-      'base_url = "http://' + location.host + '/v1"',
-      'env_key = "GPT_GW_KEY"',
-      'wire_api = "responses"'
-    ].join('\\n')
+    fillUsage(j.key)
     show('s3')
   } else {
     fail(j)
@@ -277,6 +322,10 @@ export function adminPage() {
 
 <script>
 const $ = (id) => document.getElementById(id)
+function fillUsage(key) {
+  document.querySelectorAll('[data-fill="origin"]').forEach((el) => { el.textContent = location.origin })
+  document.querySelectorAll('[data-fill="key"]').forEach((el) => { el.textContent = key || 'gw_你的key' })
+}
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 
 function badge(status, exhausted) {
@@ -451,6 +500,12 @@ export function mePage() {
       </div>
     </div>
 
+    <h2>如何使用</h2>
+    <details class="card usage" style="padding:6px 16px">
+      <summary style="cursor:pointer;padding:8px 0;font-size:14px">端点、Codex、Chatbox、curl</summary>
+      <div>${usageHtml}</div>
+    </details>
+
     <h2>说明</h2>
     <p class="muted" style="font-size:13px">
       请求优先走你自己的号，用完了才借别人的。你自己用的部分不计入「被借」。
@@ -461,6 +516,10 @@ export function mePage() {
 
 <script>
 const $ = (id) => document.getElementById(id)
+function fillUsage(key) {
+  document.querySelectorAll('[data-fill="origin"]').forEach((el) => { el.textContent = location.origin })
+  document.querySelectorAll('[data-fill="key"]').forEach((el) => { el.textContent = key || 'gw_你的key' })
+}
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 let me = null
 
@@ -505,6 +564,7 @@ async function load() {
   me = await r.json()
   $('loading').style.display = 'none'
   $('panel').style.display = 'block'
+  fillUsage(null)
   render()
 }
 

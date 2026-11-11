@@ -37,6 +37,13 @@ Codex 和 SDK 都发数组，手搓 curl 时容易踩。
 号坏了（`status = dead`）不需要重新走注册流程：在 `/me` 点「重新授权」重跑一次设备授权，
 系统按 `accountId` 命中同一条记录并刷新凭据，身份和 key 都不变。
 
+## 页面上也有说明
+
+`/enroll` 成功页和 `/me` 的「如何使用」里都有一份接入说明：端点、Codex `config.toml`、
+Chatbox 四个字段、curl 示例，以及三个坑（`input` 必须是数组、`store` 被强制 false、
+模型以 `/v1/models` 为准）。说明里的地址取自 `location.origin`，key 在 enroll 页自动填真值，
+在 `/me` 里是占位符（key 只存哈希，取不回来）。
+
 ## 同事怎么接入
 
 打开 `/enroll` → 填名字 → 点「开始授权」→ 在新标签页里登录要上交的号、输入验证码 →
