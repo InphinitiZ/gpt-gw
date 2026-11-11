@@ -428,6 +428,13 @@ export function removeAccount(id) {
   return account
 }
 
+export function removePerson(person) {
+  if (!state.people[person]) return false
+  delete state.people[person]
+  persist()
+  return true
+}
+
 export function revokeKeyFor(person) {
   const before = state.keys.length
   state.keys = state.keys.filter((k) => k.person !== person)

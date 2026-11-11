@@ -7,9 +7,18 @@ import {
   decideExitRequest,
   listExitRequests,
   removeAccount,
+  removePerson,
   revokeKeyFor,
 } from './store.mjs'
 import { revokeToken } from './openai.mjs'
+
+// 一个人名下没有任何号了 → 撤销 key、清掉会话和人记录
+function revokeIfNoAccountsLeft(person) {
+  if (accountsByOwner(person).length > 0) return 0
+  const n = revokeKeyFor(person)
+  removePerson(person)
+  return n
+}
 
 export function findExitRequest(id) {
   return listExitRequests().find((r) => r.id === id) ?? null
@@ -30,8 +39,8 @@ export function approveExit({ requestId, admin, note = null }) {
   if (account) removeAccount(account.id)
 
   // 只在「一个号都不剩」时才撤销 key：还有号在池里就仍然算有贡献
+  const revokedKeys = revokeIfNoAccountsLeft(request.person)
   const remaining = accountsByOwner(request.person)
-  const revokedKeys = remaining.length === 0 ? revokeKeyFor(request.person) : 0
   const decided = decideExitRequest(requestId, { status: 'approved', note, admin })
 
   return {
@@ -68,5 +77,7 @@ export async function revokeUpstream({ accountId, admin }) {
   }
 
   removeAccount(account.id)
-  return { ok: true, revokedBy: admin, revoke, removed: { id: account.id, label: account.label } }
+  // 和退出托管同一条规则：撤掉最后一个号，这个人就没有贡献了，key 一起撤销
+  const revokedKeys = revokeIfNoAccountsLeft(account.owner)
+  return { ok: true, revokedBy: admin, revoke, revokedKeys, removed: { id: account.id, label: account.label } }
 }
