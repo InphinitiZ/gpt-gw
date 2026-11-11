@@ -93,7 +93,7 @@ export function enrollPage() {
 
   <section id="s1" class="on">
     <label for="name">你的名字或公司邮箱（用来绑定网关 key）</label>
-    <input id="name" type="text" placeholder="zhangjs@company.com" autocomplete="username">
+    <input id="name" type="text" placeholder="你的名字" autocomplete="username">
     <button id="go">开始授权</button>
     <div class="status" id="st1"></div>
   </section>
