@@ -535,6 +535,7 @@ const server = createServer(async (req, res) => {
     }
     return json(res, 404, { message: 'not found' })
   } catch (err) {
+    console.error(`500 ${req.method} ${url.pathname}:`, err?.message ?? err)
     return json(res, 500, { message: String(err?.message ?? err) })
   }
 })

@@ -294,6 +294,8 @@ export function adminPage() {
   <h1>gpt-gw 管理台</h1>
   <p class="muted" style="margin:0 0 24px">账号状态、托管人、退出申请</p>
 
+  <p id="boot" class="bad" style="display:none;white-space:pre-wrap"></p>
+
   <section id="login" style="display:none">
     <p class="muted">输入管理员令牌。没有的话看 <code>data/admin-token</code>。</p>
     <div class="bar"><input id="tok" type="password" placeholder="admin token" style="flex:1"><button id="enter">进入</button></div>
@@ -333,6 +335,15 @@ function fillUsage(key) {
 }
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
 
+function showErr(msg) {
+  const el = $('boot')
+  if (!el) return
+  el.style.display = 'block'
+  el.textContent = String(msg)
+}
+window.addEventListener('error', (e) => showErr('页面脚本错误：' + e.message))
+window.addEventListener('unhandledrejection', (e) => showErr('请求失败：' + ((e.reason && e.reason.message) || e.reason)))
+
 function badge(status, exhausted) {
   if (exhausted) return '<span class="pill warn">额度耗尽</span>'
   if (status === 'ok') return '<span class="pill ok">正常</span>'
@@ -365,9 +376,26 @@ function ago(iso) {
 }
 
 async function load() {
-  const r = await fetch('/api/admin/overview')
+  let r
+  try {
+    r = await fetch('/api/admin/overview')
+  } catch (err) {
+    showErr('连不上网关：' + err.message)
+    $('login').style.display = 'block'
+    return
+  }
   if (r.status === 401) { $('login').style.display = 'block'; $('panel').style.display = 'none'; return }
+  if (!r.ok) {
+    showErr('管理接口返回 ' + r.status + '：' + (await r.text()).slice(0, 200))
+    $('login').style.display = 'block'
+    return
+  }
   const d = await r.json()
+  if (!Array.isArray(d.accounts)) {
+    showErr('返回结构异常：' + JSON.stringify(d).slice(0, 200))
+    $('login').style.display = 'block'
+    return
+  }
   $('login').style.display = 'none'; $('panel').style.display = 'block'
   $('updated').textContent = '更新于 ' + new Date().toLocaleTimeString()
 
@@ -472,6 +500,8 @@ export function mePage() {
 <main>
   <div id="loading" class="muted">加载中…</div>
 
+  <p id="boot" class="bad" style="display:none;white-space:pre-wrap"></p>
+
   <section id="login" style="display:none">
     <h1>我的托管</h1>
     <p class="muted">用网关发你的 key 登录。</p>
@@ -526,6 +556,15 @@ function fillUsage(key) {
   document.querySelectorAll('[data-fill="key"]').forEach((el) => { el.textContent = key || 'gw_你的key' })
 }
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+function showErr(msg) {
+  const el = $('boot')
+  if (!el) return
+  el.style.display = 'block'
+  el.textContent = String(msg)
+}
+window.addEventListener('error', (e) => showErr('页面脚本错误：' + e.message))
+window.addEventListener('unhandledrejection', (e) => showErr('请求失败：' + ((e.reason && e.reason.message) || e.reason)))
+
 let me = null
 
 function badge(a) {
