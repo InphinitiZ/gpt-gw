@@ -88,6 +88,10 @@ export GPT_GW_KEY=gw_xxx
 - 模型目录来自 `GET /backend-api/codex/models?client_version=…`，按账号返回（实测 10 个），缓存 10 分钟
 - **所有响应都要带 CORS 头**：Chatbox / ai-sdk 这类在渲染进程里 fetch 的客户端会先发 `OPTIONS`，
   且对 `GET /v1/models` 也做跨源校验。缺一个头就表现成“服务端 200、客户端一直重试”
+- **可以用自己的身份**：`originator: gpt-gw` + `User-Agent: gpt-gw/0.1.0` 实测 200，
+  不必冒充 `codex_cli_rs`。官方 CLI 的身份不是白名单
+- workspace 级头：JWT 里的 `chatgpt_compute_residency`（本机账号值是 `no_constraint`）
+  会作为 `x-openai-internal-codex-residency` 透传，缺了它某些 workspace 会 401
 - 上游在响应头里直接给额度：`x-codex-primary-used-percent` / `x-codex-secondary-used-percent`
   （实测 primary=3、secondary=0），网关每次请求顺手采样，不用单独轮询 usage 接口
 
@@ -137,7 +141,10 @@ curl -X POST localhost:8788/api/debug/fault -d '{"clear":true}'
 | `GW_DATA_DIR` | `./data` | 状态目录（`state.json`，0600） |
 | `GW_CHATGPT_BASE` | `https://chatgpt.com` | 上游 |
 | `GW_AUTH_BASE` | `https://auth.openai.com` | OAuth |
-| `GW_MODELS` | `gpt-6-astra` | `/v1/models` 返回 |
+| `GW_MODELS` | `gpt-6-astra` | 模型目录拉取失败时的兜底列表 |
+| `GW_CLIENT_LABEL` | `gpt-gw` | 上游身份：originator 与 UA 的前缀 |
+| `GW_ORIGINATOR` | 同 `GW_CLIENT_LABEL` | 单独覆盖 `originator` 头 |
+| `GW_CLIENT_UA` | `<label>/0.1.0` | 单独覆盖 `User-Agent` |
 | `GW_FORCE_STORE_FALSE` | `1` | 设 `0` 关闭强制 |
 | `GW_EXHAUST_COOLDOWN_MS` | `900000` | 429 后冷却时长 |
 

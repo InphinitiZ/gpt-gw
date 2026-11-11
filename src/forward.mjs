@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { refreshTokens, extractAccountId, UpstreamError, upstream } from './openai.mjs'
+import { refreshTokens, extractAccountId, claimsOf, UpstreamError, upstream } from './openai.mjs'
 import { pickAccount, updateAccount } from './store.mjs'
 
 // 同一个号并发刷新会互相踢下线：所有刷新必须串行化。
@@ -106,14 +106,37 @@ export async function freshAccount(account, { force = false } = {}) {
   }
 }
 
+// 身份头。官方客户端用 codex_cli_rs，某些第三方 harness 用自己的名字也能通过，
+// 用自己的名字比冒充官方客户端干净（风控画像更真实）。
+const CLIENT_LABEL = process.env.GW_CLIENT_LABEL ?? 'gpt-gw'
+const ORIGINATOR = process.env.GW_ORIGINATOR ?? CLIENT_LABEL
+const CLIENT_UA = process.env.GW_CLIENT_UA ?? `${CLIENT_LABEL}/0.1.0`
+
+// workspace 级要求：部分账号在 JWT 里带 residency，不带这个头会 401
+// "Workspace is not authorized in this region"。
+function residencyOf(account) {
+  try {
+    const claims = claimsOf(account.accessToken) ?? {}
+    const auth = claims['https://api.openai.com/auth'] ?? {}
+    return auth.chatgpt_data_residency ?? auth.chatgpt_compute_residency ?? null
+  } catch {
+    return null
+  }
+}
+
 function upstreamHeaders(account, clientHeaders, streaming) {
   const headers = {
     authorization: `Bearer ${account.accessToken}`,
     'chatgpt-account-id': account.accountId,
     'content-type': 'application/json',
     accept: streaming ? 'text/event-stream' : 'application/json',
-    originator: 'codex_cli_rs',
-    'user-agent': process.env.GW_CODEX_UA ?? 'codex_cli_rs/0.163.0',
+    originator: ORIGINATOR,
+    'user-agent': CLIENT_UA,
+  }
+  const residency = residencyOf(account)
+  if (residency) headers['x-openai-internal-codex-residency'] = residency
+  if (process.env.GW_DEBUG === '1') {
+    console.log(`upstream identity originator=${ORIGINATOR} ua=${CLIENT_UA} residency=${residency ?? '(none)'}`)
   }
   // 这些头是 Codex 自己的会话/续传语义，原样透传，网关不解读
   for (const name of [
