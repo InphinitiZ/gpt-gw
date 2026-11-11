@@ -167,3 +167,171 @@ $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') start() })
 </body>
 </html>`
 }
+
+export function adminPage() {
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>alpha-mind 管理台</title>
+<style>
+  :root { color-scheme: light dark; --fg:#111; --muted:#666; --line:#e3e3e3; --bg:#fff; --ok:#0a7c53; --bad:#c0392b; --warn:#b7791f; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e8e8e8; --muted:#999; --line:#2a2a2a; --bg:#111; --ok:#39d29a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+  main { max-width:1000px; margin:0 auto; padding:40px 20px 80px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:14px; margin:32px 0 10px; color:var(--muted); font-weight:600; letter-spacing:.02em; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; border:1px solid var(--line); }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); } .muted { color:var(--muted); }
+  button { font:inherit; padding:4px 10px; border-radius:6px; border:1px solid var(--line); background:transparent; color:var(--fg); cursor:pointer; }
+  button:hover { border-color:var(--muted); }
+  button.danger { color:var(--bad); border-color:var(--bad); }
+  input { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--fg); }
+  .bar { display:flex; gap:10px; align-items:center; margin-bottom:16px; }
+  .right { margin-left:auto; }
+  .empty { color:var(--muted); padding:12px 0; }
+  pre { margin:0; font-size:12px; white-space:pre-wrap; word-break:break-all; color:var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>alpha-mind 管理台</h1>
+  <p class="muted" style="margin:0 0 24px">账号状态、托管人、退出申请</p>
+
+  <section id="login" style="display:none">
+    <p class="muted">输入管理员令牌。没有的话看 <code>data/admin-token</code>。</p>
+    <div class="bar"><input id="tok" type="password" placeholder="admin token" style="flex:1"><button id="enter">进入</button></div>
+    <p id="loginerr" class="bad"></p>
+  </section>
+
+  <section id="panel" style="display:none">
+    <div class="bar">
+      <button id="refresh">刷新</button>
+      <span id="updated" class="muted"></span>
+      <span class="right"></span>
+      <button id="logout">退出</button>
+    </div>
+
+    <h2>账号</h2>
+    <table><thead><tr>
+      <th>账号</th><th>状态</th><th>额度</th><th>最近探测</th><th>被借</th><th>当前使用者</th><th></th>
+    </tr></thead><tbody id="accounts"></tbody></table>
+
+    <h2>托管人</h2>
+    <table><thead><tr>
+      <th>姓名</th><th>自己的号</th><th>当前在用</th><th>本周请求</th><th>key 指纹</th><th>待退出</th>
+    </tr></thead><tbody id="people"></tbody></table>
+
+    <h2>退出申请</h2>
+    <table><thead><tr>
+      <th>申请人</th><th>要退的号</th><th>理由</th><th>时间</th><th>状态</th><th>操作</th>
+    </tr></thead><tbody id="exits"></tbody></table>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+
+function badge(status, exhausted) {
+  if (exhausted) return '<span class="pill warn">额度耗尽</span>'
+  if (status === 'ok') return '<span class="pill ok">正常</span>'
+  if (status === 'dead') return '<span class="pill bad">已失效</span>'
+  return '<span class="pill">' + esc(status || '未知') + '</span>'
+}
+
+function pct(q) {
+  if (!q) return '<span class="muted">—</span>'
+  const p = q.primary && typeof q.primary.usedPercent === 'number' ? q.primary.usedPercent : null
+  const s = q.secondary && typeof q.secondary.usedPercent === 'number' ? q.secondary.usedPercent : null
+  const parts = []
+  if (p !== null) parts.push('周 ' + p + '%')
+  if (s !== null) parts.push('5h ' + s + '%')
+  return parts.length ? esc(parts.join(' · ')) : '<span class="muted">—</span>'
+}
+
+function ago(iso) {
+  if (!iso) return '<span class="muted">从未</span>'
+  const diff = Date.now() - Date.parse(iso)
+  if (!Number.isFinite(diff)) return '<span class="muted">—</span>'
+  const m = Math.round(diff / 60000)
+  return m < 1 ? '刚刚' : m < 60 ? m + ' 分钟前' : Math.round(m / 60) + ' 小时前'
+}
+
+async function load() {
+  const r = await fetch('/api/admin/overview')
+  if (r.status === 401) { $('login').style.display = 'block'; $('panel').style.display = 'none'; return }
+  const d = await r.json()
+  $('login').style.display = 'none'; $('panel').style.display = 'block'
+  $('updated').textContent = '更新于 ' + new Date().toLocaleTimeString()
+
+  $('accounts').innerHTML = d.accounts.length ? d.accounts.map((a) => {
+    const err = a.lastError ? '<pre>' + esc((a.lastError.code || '') + ' ' + (a.lastError.message || '')) + '</pre>' : ''
+    return '<tr><td><strong>' + esc(a.label) + '</strong><br><span class="muted">' + esc(a.email || a.accountId) + '</span></td>' +
+      '<td>' + badge(a.status, a.exhausted) + (err ? '<br>' + err : '') + '</td>' +
+      '<td>' + pct(a.quota) + '</td>' +
+      '<td>' + ago(a.lastProbeAt) + '</td>' +
+      '<td>' + (a.borrowed || 0) + '</td>' +
+      '<td>' + (a.assignedTo && a.assignedTo.length ? esc(a.assignedTo.join(', ')) : '<span class="muted">—</span>') + '</td>' +
+      '<td><button class="danger" data-revoke="' + esc(a.id) + '" data-label="' + esc(a.label) + '">强制撤销</button></td></tr>'
+  }).join('') : '<tr><td colspan="7" class="empty">池子里还没有号</td></tr>'
+
+  $('people').innerHTML = d.people.length ? d.people.map((p) => {
+    const own = p.account ? esc(p.account.label) + '（被借 ' + p.account.borrowed + ' 次）' : '<span class="muted">无</span>'
+    const using = p.assignedTo ? (p.assignedReason === 'own' ? '<span class="ok">自己的号</span>' : '<span class="warn">借别人的号</span>') : '<span class="muted">—</span>'
+    return '<tr><td>' + esc(p.person) + '</td><td>' + own + '</td><td>' + using + '</td>' +
+      '<td>' + p.requests + '</td><td class="muted">' + esc(p.key ? p.key.fingerprint : '无 key') + '</td>' +
+      '<td>' + (p.pendingExit ? '<span class="warn">有</span>' : '<span class="muted">—</span>') + '</td></tr>'
+  }).join('') : '<tr><td colspan="6" class="empty">还没有人</td></tr>'
+
+  const pend = d.exitRequests || []
+  $('exits').innerHTML = pend.length ? pend.map((r) => {
+    const actions = r.status === 'pending'
+      ? '<button data-approve="' + esc(r.id) + '">通过</button> <button data-reject="' + esc(r.id) + '">驳回</button>'
+      : '<span class="muted">' + esc(r.note || '') + '</span>'
+    const cls = r.status === 'pending' ? 'warn' : r.status === 'approved' ? 'ok' : 'muted'
+    return '<tr><td>' + esc(r.person) + '</td><td class="muted">' + esc(r.accountId || '—') + '</td>' +
+      '<td>' + esc(r.reason || '—') + '</td><td>' + ago(r.createdAt) + '</td>' +
+      '<td class="' + cls + '">' + esc(r.status) + '</td><td>' + actions + '</td></tr>'
+  }).join('') : '<tr><td colspan="6" class="empty">没有申请</td></tr>'
+}
+
+async function act(url, body, confirmText) {
+  if (confirmText && !confirm(confirmText)) return
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok) alert(j.message || j.reason || ('操作失败 ' + r.status))
+  load()
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target
+  if (t.dataset.approve) act('/api/admin/exit/' + t.dataset.approve, { action: 'approve', note: '' })
+  if (t.dataset.reject) {
+    const note = prompt('驳回理由（必填）')
+    if (note) act('/api/admin/exit/' + t.dataset.reject, { action: 'reject', note })
+  }
+  if (t.dataset.revoke) {
+    const msg = '强制撤销「' + t.dataset.label + '」？\\n\\n这会终止该账号所有设备上的登录（包括号主自己的手机和电脑），且不可恢复。'
+    act('/api/admin/revoke', { accountId: t.dataset.revoke, confirm: true }, msg)
+  }
+})
+
+$('enter').onclick = async () => {
+  const r = await fetch('/admin/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: $('tok').value }) })
+  if (r.ok) load()
+  else $('loginerr').textContent = '令牌不正确'
+}
+$('tok') && $('tok').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('enter').click() })
+$('refresh').onclick = load
+$('logout').onclick = async () => { await fetch('/admin/logout', { method: 'POST' }); $('panel').style.display='none'; $('login').style.display='block' }
+load()
+</script>
+</body>
+</html>`
+}

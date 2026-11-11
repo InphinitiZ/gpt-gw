@@ -210,7 +210,12 @@ export function listAccounts() {
     accountId: maskAccountId(a.accountId),
     status: a.status,
     exhausted: Boolean(a.exhaustedUntil && a.exhaustedUntil > now),
+    exhaustedUntil: a.exhaustedUntil ?? null,
     quota: a.quota ?? null,
+    quotaAt: a.quotaAt ?? null,
+    lastProbeAt: a.lastProbeAt ?? null,
+    lastError: a.lastError ?? null,
+    borrowed: borrowedByOthers(a),
     assignedTo: Object.entries(state.assignments)
       .filter(([, v]) => v.accountId === a.id)
       .map(([person]) => person),

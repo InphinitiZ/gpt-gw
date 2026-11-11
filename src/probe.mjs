@@ -8,6 +8,12 @@ import { freshAccount } from './forward.mjs'
 const INTERVAL_MS = Number(process.env.GW_PROBE_INTERVAL_MS ?? 10 * 60 * 1000)
 const INITIAL_DELAY_MS = Number(process.env.GW_PROBE_INITIAL_DELAY_MS ?? 5000)
 
+function errorText(err) {
+  const body = err instanceof UpstreamError ? err.body : null
+  if (body && typeof body === 'object') return (body.error?.message ?? body.message ?? err.message).slice(0, 200)
+  return String(err.message).slice(0, 200)
+}
+
 function errorCode(err) {
   const body = err instanceof UpstreamError ? err.body : null
   if (body && typeof body === 'object') return body.error?.code ?? body.code ?? null
@@ -49,7 +55,7 @@ async function probeAccount(account) {
     updateAccount(account.id, {
       status: dead ? 'dead' : account.status,
       lastProbeAt: at,
-      lastError: { at, code: errorCode(err), message: String(err.message).slice(0, 200) },
+      lastError: { at, code: errorCode(err), message: errorText(err) },
     })
     return {
       id: account.id,

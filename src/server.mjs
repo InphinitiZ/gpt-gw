@@ -1,12 +1,17 @@
 import { createServer } from 'node:http'
 import { randomUUID, randomBytes, createHash } from 'node:crypto'
-import { enrollPage } from './page.mjs'
+import { readFileSync, writeFileSync, chmodSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { timingSafeEqual } from 'node:crypto'
+import { enrollPage, adminPage } from './page.mjs'
 import { startDeviceCode, pollDeviceCode, exchangeDeviceCode, extractAccountId, extractEmail, describeTokenShape, fetchCodexModels, UpstreamError } from './openai.mjs'
 import {
   addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount, flush,
+  dataDir, listPeople, listExitRequests,
 } from './store.mjs'
 import { proxyResponses, freshAccount, setFault, clearFaults } from './forward.mjs'
 import { startProber, probeOnce } from './probe.mjs'
+import { approveExit, rejectExit, revokeUpstream } from './ops.mjs'
 
 const HOST = process.env.GW_HOST ?? '127.0.0.1'
 const PORT = Number(process.env.GW_PORT ?? 8787)
@@ -246,6 +251,52 @@ async function codexModelIds() {
 
 const DEBUG = process.env.GW_DEBUG === '1'
 
+// ── 管理员令牌 ────────────────────────────────────────────────────────────
+// 优先用环境变量；没配就生成一个存到 data/admin-token（0600），重启不变。
+function loadAdminToken() {
+  if (process.env.GW_ADMIN_TOKEN) return process.env.GW_ADMIN_TOKEN.trim()
+  const path = resolve(dataDir(), 'admin-token')
+  try {
+    const existing = readFileSync(path, 'utf8').trim()
+    if (existing) return existing
+  } catch {
+    /* 还没生成过 */
+  }
+  const token = randomBytes(24).toString('hex')
+  writeFileSync(path, token + '\n', { mode: 0o600 })
+  chmodSync(path, 0o600)
+  console.log(`admin: 已生成令牌，存在 ${path}`)
+  return token
+}
+
+const ADMIN_TOKEN = loadAdminToken()
+const adminSessions = new Map() // token -> 过期时间
+
+function adminTokenOk(candidate) {
+  const a = Buffer.from(String(candidate ?? ''))
+  const b = Buffer.from(ADMIN_TOKEN)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+function cookieValue(req, name) {
+  for (const part of String(req.headers.cookie ?? '').split(';')) {
+    const [k, ...rest] = part.trim().split('=')
+    if (k === name) return rest.join('=')
+  }
+  return null
+}
+
+function isAdmin(req) {
+  const sid = cookieValue(req, 'gw_admin')
+  if (!sid) return false
+  const expires = adminSessions.get(sid)
+  if (!expires || expires < Date.now()) {
+    adminSessions.delete(sid)
+    return false
+  }
+  return true
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? `${HOST}:${PORT}`}`)
   // 所有响应统一带上 CORS，否则跨源 GET（拉模型列表）会被浏览器层拦掉，
@@ -313,6 +364,50 @@ const server = createServer(async (req, res) => {
         object: 'list',
         data: ids.map((id) => ({ id, object: 'model', created: 0, owned_by: 'alpha-mind' })),
       })
+    }
+    // ── 管理端 ──────────────────────────────────────────────────────────
+    if (req.method === 'POST' && url.pathname === '/admin/login') {
+      const body = await readBody(req)
+      if (!adminTokenOk(body.token)) return json(res, 401, { message: '管理员令牌不正确' })
+      const sid = randomBytes(24).toString('hex')
+      adminSessions.set(sid, Date.now() + 12 * 3600 * 1000)
+      res.setHeader('set-cookie', `gw_admin=${sid}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200`)
+      return json(res, 200, { ok: true })
+    }
+    if (req.method === 'POST' && url.pathname === '/admin/logout') {
+      const sid = cookieValue(req, 'gw_admin')
+      if (sid) adminSessions.delete(sid)
+      res.setHeader('set-cookie', 'gw_admin=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0')
+      return json(res, 200, { ok: true })
+    }
+    if (req.method === 'GET' && url.pathname === '/admin') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      return res.end(adminPage())
+    }
+    if (req.method === 'GET' && url.pathname === '/api/admin/overview') {
+      if (!isAdmin(req)) return json(res, 401, { message: '需要管理员登录' })
+      return json(res, 200, {
+        accounts: listAccounts(),
+        people: listPeople(),
+        exitRequests: listExitRequests().slice(0, 50),
+        probing: true,
+      })
+    }
+    if (req.method === 'POST' && url.pathname.startsWith('/api/admin/exit/')) {
+      if (!isAdmin(req)) return json(res, 401, { message: '需要管理员登录' })
+      const id = decodeURIComponent(url.pathname.split('/').pop())
+      const body = await readBody(req)
+      const result =
+        body.action === 'approve'
+          ? approveExit({ requestId: id, admin: 'admin', note: body.note ?? null })
+          : rejectExit({ requestId: id, admin: 'admin', note: body.note ?? '' })
+      return json(res, result.ok ? 200 : 400, result)
+    }
+    if (req.method === 'POST' && url.pathname === '/api/admin/revoke') {
+      if (!isAdmin(req)) return json(res, 401, { message: '需要管理员登录' })
+      const body = await readBody(req)
+      if (body.confirm !== true) return json(res, 400, { ok: false, reason: 'confirm_required' })
+      return json(res, 200, await revokeUpstream({ accountId: body.accountId, admin: 'admin' }))
     }
     return json(res, 404, { message: 'not found' })
   } catch (err) {
