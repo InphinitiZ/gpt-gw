@@ -100,28 +100,23 @@ export GPT_GW_KEY=gw_xxx
 
 **已实测通过（真实订阅号，2026-11-11）：**
 
-- 网关转发 `POST /v1/responses` → 上游 200，SSE 正常回流，模型返回内容正确
-- `x-oai-attestation` **不是必需的**：只带 `authorization` + `chatgpt-account-id` + `originator`
-  就能打通，不需要伪造任何设备证明
-- 模型目录来自 `GET /backend-api/codex/models?client_version=…`，按账号返回（实测 10 个），缓存 10 分钟
-- **所有响应都要带 CORS 头**：Chatbox / ai-sdk 这类在渲染进程里 fetch 的客户端会先发 `OPTIONS`，
-  且对 `GET /v1/models` 也做跨源校验。缺一个头就表现成“服务端 200、客户端一直重试”
-- **可以用自己的身份**：`originator: alpha-mind` + `User-Agent: alpha-mind/0.1.0` 实测 200，
-  不必冒充 `codex_cli_rs`。官方 CLI 的身份不是白名单
-- workspace 级头：JWT 里的 `chatgpt_compute_residency`（本机账号值是 `no_constraint`）
-  会作为 `x-openai-internal-codex-residency` 透传，缺了它某些 workspace 会 401
-- 上游在响应头里直接给额度：`x-codex-primary-used-percent` / `x-codex-secondary-used-percent`
-  （实测 primary=3、secondary=0），网关每次请求顺手采样，不用单独轮询 usage 接口
+- device code 四步闭环：申请码 → 人工输码 → 拿 `authorization_code` → PKCE 换 token
+- 网关转发 `POST /v1/responses` → 上游 200，SSE 正常回流，模型输出正确
+- `x-oai-attestation` **不是必需的**；`originator` 可以用自己的名字
+- 401 三种终态：access 坏但 refresh 好（静默刷新）、号彻底死（换号）、池子全空（503）
+- 429 控制流：注入验证（冷却、透传、恢复）；**真实 429 的语义仍未见过**
+- 额度探针：`/wham/usage` 真实返回，`primary_window.used_percent` / `limit_reached` /
+  `reset_at` / `credits` 全部解析正确
+- refresh token 单次使用、轮转后必须立刻落盘
+- `revoke` 按**用户**生效：一次调用会登出该账号所有设备（这是「退出不 revoke」的原因）
+- 模型目录：`/backend-api/codex/models` 按账号返回 10 个模型
 
 **还没做：**
 
-- 周分配器（目前是「先到先得 + 最久未用」，单号时无感，多号后需要按 `usedPercent` 装箱）
-- 429 换号、401 强制刷新这两条路径只有代码，没有真实触发过
-
-**还没验：**
-
-- device code 的完整闭环（卡在需要人工在 `auth.openai.com/codex/device` 输码）
-- refresh token 轮转（测试号的 access token 还有 10 天，没触发刷新）
+- 周分配器：多号时仍是「自己的号优先 + 最久未用兜底」，没有按余量装箱
+- 重复身份合并：cookie 和 key 都丢了的人重新 enroll 会产生新身份，后台出现同名两行
+- refresh token 明文存储在 `data/state.json`（0600，但未加密）
+- 真实 429 的形状（只有注入验证，没见过上游真实响应）
 
 ## 安全提醒
 
