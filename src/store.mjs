@@ -129,6 +129,39 @@ export function rotateKey({ hash, person, accountId }) {
   return key
 }
 
+export function accountsByOwner(person) {
+  return state.accounts.filter((a) => a.owner === person)
+}
+
+export function accountByAccountId(accountId) {
+  return state.accounts.find((a) => a.accountId === accountId) ?? null
+}
+
+export function personHasKey(person) {
+  return state.keys.some((k) => k.person === person)
+}
+
+// 追加账号时用：已经有 key 就沿用，绝不换新的。
+// 换 key 应该是管理员显式「重置」，不是加号的副作用。
+export function ensureKey({ hash, person, accountId }) {
+  const existing = state.keys.find((k) => k.person === person)
+  if (existing) return { key: existing, created: false }
+  return { key: issueKey({ hash, person, accountId }), created: true }
+}
+
+function issueKey({ hash, person, accountId }) {
+  const key = {
+    id: `key_${crypto.randomUUID().slice(0, 8)}`,
+    hash,
+    person,
+    accountId,
+    createdAt: new Date().toISOString(),
+  }
+  state.keys.push(key)
+  persist()
+  return key
+}
+
 export function keyByHash(hash) {
   return state.keys.find((k) => k.hash === hash) ?? null
 }
@@ -386,14 +419,18 @@ export function listPeople() {
   const people = new Set([...state.keys.map((k) => k.person), ...state.accounts.map((a) => a.owner)])
   return [...people].filter(Boolean).sort().map((person) => {
     const key = keyFingerprintFor(person)
-    const account = state.accounts.find((a) => a.owner === person) ?? null
+    const accounts = state.accounts.filter((a) => a.owner === person)
     const assignment = assignmentFor(person)
     return {
       person,
       key,
-      account: account
-        ? { id: account.id, label: account.label, email: account.email, status: account.status, borrowed: borrowedByOthers(account) }
-        : null,
+      accounts: accounts.map((a) => ({
+        id: a.id,
+        label: a.label,
+        email: a.email,
+        status: a.status,
+        borrowed: borrowedByOthers(a),
+      })),
       assignedTo: assignment?.accountId ?? null,
       assignedReason: assignment?.reason ?? null,
       requests: usageFor(person).requests,

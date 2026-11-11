@@ -64,7 +64,7 @@ export function enrollPage() {
     <div class="warn" id="unresolved" style="display:none">
       号已经入库，但没从 token 里解析出账号 id。先别拿去用，把 <code class="inline">data/last-device-token.json</code> 发给管理员。
     </div>
-    <p class="hint">这是你的网关 key，只显示这一次：</p>
+    <p class="hint" id="keyhint">这是你的网关 key，只显示这一次：</p>
     <pre id="key"></pre>
     <p class="hint">写进 <code class="inline">~/.codex/config.toml</code>：</p>
     <pre id="cfg"></pre>
@@ -84,6 +84,13 @@ export function enrollPage() {
       <pre>codex login          # 用要上交的号登录
 npx alpha-mind enroll     # 读取 ~/.codex/auth.json 并上传</pre>
       <p class="hint">在你自己机器上发起，走你的网络，不会被拦。</p>
+    </div>
+    <div id="loginbox" style="display:none">
+      <p>这个名称已经有人用过了。如果这是你，用原来的 key 登录后再加号：</p>
+      <div class="row">
+        <input id="keyin" type="password" placeholder="gw_..." style="flex:1">
+        <button id="loginbtn" class="ghost">登录</button>
+      </div>
     </div>
     <button id="retry" class="ghost">重试</button>
   </section>
@@ -136,7 +143,12 @@ async function tick() {
   clearInterval(timer)
   if (j.status === 'complete') {
     if (j.account && j.account.accountIdResolved === false) $('unresolved').style.display = 'block'
-    $('key').textContent = j.key
+    if (!j.key) {
+      $('keyhint').textContent = '你已经有 key 了，账号已加到同一个身份下，沿用原来的 key（指纹 ' + j.keyFingerprint + '）：'
+      $('key').textContent = '（不重复显示）'
+    } else {
+      $('key').textContent = j.key
+    }
     $('cfg').textContent = [
       'model_provider = "alpha-mind"',
       '',
@@ -156,13 +168,40 @@ function fail(j) {
   clearInterval(timer)
   $('errmsg').textContent = j.message || '授权失败'
   $('fallback').style.display = j.challenge ? 'block' : 'none'
+  $('loginbox').style.display = j.needLogin ? 'block' : 'none'
   show('s4')
+}
+
+async function boot() {
+  try {
+    const r = await fetch('/api/me')
+    if (!r.ok) return
+    const me = await r.json()
+    const input = $('name')
+    input.value = me.person
+    input.disabled = true
+    $('st1').textContent = '已登录为 ' + me.person + '，现在交的号会加到这个人名下'
+  } catch {}
+}
+
+$('loginbtn').onclick = async () => {
+  const r = await fetch('/api/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: $('keyin').value.trim() })
+  })
+  if (!r.ok) { $('errmsg').textContent = 'key 不对'; return }
+  const me = await r.json()
+  $('name').value = me.person
+  $('name').disabled = true
+  $('st1').textContent = '已登录为 ' + me.person
+  show('s1')
 }
 
 $('go').onclick = start
 $('retry').onclick = () => { $('st1').textContent = ''; show('s1') }
 $('again').onclick = () => { $('st1').textContent = ''; show('s1') }
 $('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') start() })
+boot()
 </script>
 </body>
 </html>`

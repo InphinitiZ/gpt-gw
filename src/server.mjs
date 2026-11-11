@@ -8,6 +8,7 @@ import { startDeviceCode, pollDeviceCode, exchangeDeviceCode, extractAccountId, 
 import {
   addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount, flush,
   dataDir, listPeople, listExitRequests,
+  createSession, sessionById, accountByAccountId, personHasKey, ensureKey, deleteSession, usageFor,
 } from './store.mjs'
 import { proxyResponses, freshAccount, setFault, clearFaults } from './forward.mjs'
 import { startProber, probeOnce } from './probe.mjs'
@@ -53,6 +54,15 @@ async function readBody(req, limit = 16 * 1024) {
   }
   if (!chunks.length) return {}
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+}
+
+function currentUser(req) {
+  const sid = cookieValue(req, 'gw_sid')
+  return sid ? sessionById(sid) : null
+}
+
+function setUserCookie(res, sessionId) {
+  res.setHeader('set-cookie', `gw_sid=${sessionId}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${30 * 86400}`)
 }
 
 function hashKey(key) {
@@ -104,10 +114,21 @@ function failSession(session, message, challenge = false) {
 
 async function handleStart(req, res) {
   const body = await readBody(req)
-  const name = String(body.name ?? '').trim()
-  if (!name) return json(res, 400, { message: '缺少 name' })
+  const user = currentUser(req)
+  let person = user?.person ?? String(body.name ?? '').trim()
 
-  const session = newSession(name)
+  if (!person) return json(res, 400, { message: '缺少 name' })
+  // 名字在首次 enroll 时占用。已存在同名的 key 时不允许匿名顶替，
+  // 否则任何人输入别人名字就能把对方的 key 顶掉。
+  if (!user && personHasKey(person)) {
+    return json(res, 409, {
+      status: 'error',
+      message: '这个名称已经有人用了。如果这是你，请先用原来的 key 登录再加号；否则换一个名字。',
+      needLogin: true,
+    })
+  }
+
+  const session = newSession(person)
   try {
     const device = await startDeviceCode()
     session.deviceAuthId = device.deviceAuthId
@@ -193,6 +214,14 @@ async function handleStatus(req, res, url) {
     }
 
     const email = extractEmail(tokens.id_token, tokens.access_token)
+
+    // 一个账号只能有一个托管人
+    const existing = accountByAccountId(accountId)
+    if (existing && existing.owner !== session.name) {
+      failSession(session, `这个 ChatGPT 账号已经由 ${existing.owner} 托管了。要换人得先让对方申请退出。`)
+      return json(res, 200, { status: 'error', ...session.error })
+    }
+
     const { account, created } = addAccount({
       owner: session.name,
       email,
@@ -202,12 +231,25 @@ async function handleStatus(req, res, url) {
       expiresAt: Date.now() + Number(tokens.expires_in ?? 3600) * 1000,
     })
 
-    const plaintextKey = `gw_${randomBytes(24).toString('hex')}`
-    rotateKey({ hash: hashKey(plaintextKey), person: session.name, accountId })
+    // 已经有 key 的人追加账号：沿用原 key，不换新的
+    const hadKey = personHasKey(session.name)
+    const plaintextKey = hadKey ? null : `gw_${randomBytes(24).toString('hex')}`
+    const ensured = ensureKey({
+      hash: plaintextKey ? hashKey(plaintextKey) : `reuse:${session.name}`,
+      person: session.name,
+      accountId,
+    })
+
+    // 登录态：enroll 完成即为这个人建立会话
+    const userSession = createSession(session.name)
+    setUserCookie(res, userSession.id)
 
     session.status = 'complete'
     session.result = {
+      person: session.name,
       key: plaintextKey,
+      keyCreated: !hadKey,
+      keyFingerprint: ensured.key.hash.slice(0, 8),
       account: {
         id: account.id,
         label: account.label,
@@ -363,6 +405,35 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         object: 'list',
         data: ids.map((id) => ({ id, object: 'model', created: 0, owned_by: 'alpha-mind' })),
+      })
+    }
+    // ── 用户端 ──────────────────────────────────────────────────────────
+    if (req.method === 'POST' && url.pathname === '/api/login') {
+      const body = await readBody(req)
+      const record = keyByHash(hashKey(String(body.key ?? '').trim()))
+      if (!record) return json(res, 401, { message: 'key 不对' })
+      const session = createSession(record.person)
+      setUserCookie(res, session.id)
+      return json(res, 200, { person: record.person })
+    }
+    if (req.method === 'POST' && url.pathname === '/api/logout') {
+      const sid = cookieValue(req, 'gw_sid')
+      if (sid) deleteSession(sid)
+      res.setHeader('set-cookie', 'gw_sid=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0')
+      return json(res, 200, { ok: true })
+    }
+    if (req.method === 'GET' && url.pathname === '/api/me') {
+      const user = currentUser(req)
+      if (!user) return json(res, 401, { message: '未登录' })
+      const me = listPeople().find((p) => p.person === user.person) ?? null
+      return json(res, 200, {
+        person: user.person,
+        key: me?.key ?? null,
+        accounts: me?.accounts ?? [],
+        assignedTo: me?.assignedTo ?? null,
+        assignedReason: me?.assignedReason ?? null,
+        requests: usageFor(user.person).requests,
+        pendingExit: me?.pendingExit ?? false,
       })
     }
     // ── 管理端 ──────────────────────────────────────────────────────────
