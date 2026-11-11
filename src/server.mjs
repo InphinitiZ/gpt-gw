@@ -305,7 +305,7 @@ const server = createServer(async (req, res) => {
       const ids = await codexModelIds()
       return json(res, 200, {
         object: 'list',
-        data: ids.map((id) => ({ id, object: 'model', created: 0, owned_by: 'openai' })),
+        data: ids.map((id) => ({ id, object: 'model', created: 0, owned_by: 'alpha-mind' })),
       })
     }
     return json(res, 404, { message: 'not found' })
@@ -322,5 +322,5 @@ setInterval(() => {
 }, 60_000).unref()
 
 server.listen(PORT, HOST, () => {
-  console.log(`gpt-gw enrollment on http://${HOST}:${PORT}/enroll`)
+  console.log(`alpha-mind enrollment on http://${HOST}:${PORT}/enroll`)
 })

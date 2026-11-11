@@ -82,7 +82,7 @@ export function enrollPage() {
     <div id="fallback" style="display:none">
       <p>网关的出口 IP 被 Cloudflare 拦了，跑不了设备授权。改成在你自己的终端里跑：</p>
       <pre>codex login          # 用要上交的号登录
-npx gpt-gw enroll     # 读取 ~/.codex/auth.json 并上传</pre>
+npx alpha-mind enroll     # 读取 ~/.codex/auth.json 并上传</pre>
       <p class="hint">在你自己机器上发起，走你的网络，不会被拦。</p>
     </div>
     <button id="retry" class="ghost">重试</button>
@@ -138,10 +138,10 @@ async function tick() {
     if (j.account && j.account.accountIdResolved === false) $('unresolved').style.display = 'block'
     $('key').textContent = j.key
     $('cfg').textContent = [
-      'model_provider = "gpt-gw"',
+      'model_provider = "alpha-mind"',
       '',
-      '[model_providers.gpt-gw]',
-      'name = "gpt-gw"',
+      '[model_providers.alpha-mind]',
+      'name = "alpha-mind"',
       'base_url = "http://' + location.host + '/v1"',
       'env_key = "GPT_GW_KEY"',
       'wire_api = "responses"'
