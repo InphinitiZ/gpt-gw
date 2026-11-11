@@ -1,9 +1,9 @@
 # gpt-gw
 
-ChatGPT 订阅号共享网关（仓库目录仍叫 `gpt-gw`）。
+ChatGPT 订阅号共享网关。
 
-把公司报销的 ChatGPT 订阅号做成一个共享池，让 Codex 这类客户端用**标准 API key** 接入。
-同事不需要登录 ChatGPT，只需要一个网关发的 `gw_` key。
+把多个 ChatGPT 订阅号做成一个共享池，让 Codex 这类客户端用**标准 API key** 接入。
+使用者不需要登录 ChatGPT，只需要一个网关发的 `gw_` key。
 
 > ⚠️ 这套做法不在 OpenAI 的授权范围内，和官方合作方模式有本质区别。
 > 上线前先读[风险与合规](#风险与合规)。
@@ -54,7 +54,7 @@ node src/server.mjs          # 默认 http://127.0.0.1:8787/ ，可用 GW_PORT �
 
 ### 合规的替代路径
 
-- 同事各自用那 16 个合作 app 里的某一个（Hermes、Warp、Vercel 等），登自己的号，额度各归各的
+- 用 16 个合作 app 里的某一个（Hermes、Warp、Vercel 等），登自己的号，额度各归各的
 - 换 ChatGPT Business / Enterprise 席位，用工作区级额度
 
 两条都不需要维护账号池，代价是“打不满”。这是产品决策，不是技术问题。
@@ -95,7 +95,7 @@ Chatbox 四个字段、curl 示例，以及三个坑（`input` 必须是数组�
 模型以 `/v1/models` 为准）。说明里的地址取自 `location.origin`，key 在 enroll 页自动填真值，
 在 `/me` 里是占位符（key 只存哈希，取不回来）。
 
-## 同事怎么接入
+## 怎么接入
 
 打开 `/enroll` → 填名字 → 点「开始授权」→ 在新标签页里登录要上交的号、输入验证码 →
 页面轮询到 token 后，后端把号写进池子，并给这个人发一把 `gw_` key（只显示一次）。
