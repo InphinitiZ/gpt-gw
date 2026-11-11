@@ -20,6 +20,11 @@ wire_api = "responses"
 # 然后
 export GPT_GW_KEY=<span data-fill="key"></span></pre>
 
+  <h3>Codex 桌面端（macOS App）</h3>
+  <p class="hint">同一个 <code class="inline">~/.codex/config.toml</code>，但把 <code class="inline">env_key</code> 换成下面这行——
+  App 从 Finder 启动拿不到环境变量，令牌必须写进配置。改完重启 App。</p>
+  <pre>experimental_bearer_token = "<span data-fill="key"></span>"</pre>
+
   <h3>Chatbox</h3>
   <pre>API 模式：OpenAI Responses API 兼容
 API 主机：<span data-fill="origin"></span>/v1

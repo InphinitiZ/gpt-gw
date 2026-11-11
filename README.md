@@ -145,6 +145,32 @@ wire_api = "responses"
 export GPT_GW_KEY=gw_xxx
 ```
 
+### Codex 桌面端（macOS App）
+
+应用名是 ChatGPT，但 bundle id 是 `com.openai.codex`，本质就是 Codex 桌面端。
+它从 Finder 启动，**拿不到 shell 里的环境变量**，所以 `env_key` 那套在它这里会失效。
+改用 `experimental_bearer_token`，把令牌直接写进配置：
+
+```toml
+# ~/.codex/config.toml
+model = "gpt-6-astra"
+model_provider = "gpt-gw"
+
+[model_providers.gpt-gw]
+name = "gpt-gw"
+base_url = "http://gw.corp:8787/v1"
+experimental_bearer_token = "gw_xxx"
+wire_api = "responses"
+```
+
+改完**重启 App**。实测（2026-11-11）它确实读 `~/.codex/config.toml`，尽管带着
+`app-sandbox` entitlement 且没有 home 目录读取权限。
+
+两个坑：
+
+- `model_provider` 必须在文件**最顶部、第一个 `[` 之前**，否则会被归到上面某个表里静默失效
+- 桌面端不需要 `codex login`，也不需要填那个「OpenAI API 密钥」登录框——provider 里写死令牌就够了
+
 **授权成功后，建议本机不再 `codex login` 这个号。** 主要理由是请求会绕过网关：不粘连、
 吃不到 prompt cache、额度也不进池子的账。两边同时刷新 refresh token 可能互相踢下线，
 但这一点尚未实测（见下）。
@@ -186,6 +212,7 @@ export GPT_GW_KEY=gw_xxx
 
 **已实测通过（真实订阅号，2026-11-11）：**
 
+- **Codex 桌面端（macOS App）接入成功**：`experimental_bearer_token` 写进 `~/.codex/config.toml`，重启后走网关
 - device code 四步闭环：申请码 → 人工输码 → 拿 `authorization_code` → PKCE 换 token
 - 网关转发 `POST /v1/responses` → 上游 200，SSE 正常回流，模型输出正确
 - `x-oai-attestation` **不是必需的**；`originator` 可以用自己的名字
