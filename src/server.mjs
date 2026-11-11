@@ -9,6 +9,7 @@ import {
   addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount, flush,
   dataDir, listPeople, listExitRequests,
   createSession, sessionById, accountByAccountId, personHasKey, ensureKey, deleteSession, usageFor,
+  createPerson, personInfo,
   accountById, createExitRequest, cancelExitRequest, pendingExitFor,
 } from './store.mjs'
 import { proxyResponses, freshAccount, setFault, clearFaults } from './forward.mjs'
@@ -116,17 +117,13 @@ function failSession(session, message, challenge = false) {
 async function handleStart(req, res) {
   const body = await readBody(req)
   const user = currentUser(req)
-  let person = user?.person ?? String(body.name ?? '').trim()
 
-  if (!person) return json(res, 400, { message: '缺少 name' })
-  // 名字在首次 enroll 时占用。已存在同名的 key 时不允许匿名顶替，
-  // 否则任何人输入别人名字就能把对方的 key 顶掉。
-  if (!user && personHasKey(person)) {
-    return json(res, 409, {
-      status: 'error',
-      message: '这个名称已经有人用了。如果这是你，请先用原来的 key 登录再加号；否则换一个名字。',
-      needLogin: true,
-    })
+  let person = user?.person ?? null
+  if (!person) {
+    // 身份是随机 id，名字只是显示名：重名无害，也不需要先占名字。
+    const displayName = String(body.name ?? '').trim()
+    if (!displayName) return json(res, 400, { message: '缺少名字' })
+    person = createPerson(displayName).id
   }
 
   const session = newSession(person)
@@ -219,7 +216,7 @@ async function handleStatus(req, res, url) {
     // 一个账号只能有一个托管人
     const existing = accountByAccountId(accountId)
     if (existing && existing.owner !== session.name) {
-      failSession(session, `这个 ChatGPT 账号已经由 ${existing.owner} 托管了。要换人得先让对方申请退出。`)
+      failSession(session, `这个 ChatGPT 账号已经由 ${personInfo(existing.owner).displayName} 托管了。要换人得先让对方申请退出。`)
       return json(res, 200, { status: 'error', ...session.error })
     }
 
@@ -429,6 +426,7 @@ const server = createServer(async (req, res) => {
       const me = listPeople().find((p) => p.person === user.person) ?? null
       return json(res, 200, {
         person: user.person,
+        displayName: personInfo(user.person).displayName,
         key: me?.key ?? null,
         accounts: me?.accounts ?? [],
         assignedTo: me?.assignedTo ?? null,

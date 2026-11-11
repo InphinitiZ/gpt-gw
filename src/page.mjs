@@ -182,7 +182,7 @@ async function boot() {
     const input = $('name')
     input.value = me.person
     input.disabled = true
-    $('st1').textContent = '已登录为 ' + me.person + '，现在交的号会加到这个人名下'
+    $('st1').textContent = '已登录为 ' + (me.displayName || me.person) + '，现在交的号会加到这个人名下'
   } catch {}
 }
 
@@ -195,7 +195,7 @@ $('loginbtn').onclick = async () => {
   const me = await r.json()
   $('name').value = me.person
   $('name').disabled = true
-  $('st1').textContent = '已登录为 ' + me.person
+  $('st1').textContent = '已登录为 ' + (me.displayName || me.person)
   show('s1')
 }
 
@@ -331,7 +331,7 @@ async function load() {
   $('people').innerHTML = d.people.length ? d.people.map((p) => {
     const own = p.account ? esc(p.account.label) + '（被借 ' + p.account.borrowed + ' 次）' : '<span class="muted">无</span>'
     const using = p.assignedTo ? (p.assignedReason === 'own' ? '<span class="ok">自己的号</span>' : '<span class="warn">借别人的号</span>') : '<span class="muted">—</span>'
-    return '<tr><td>' + esc(p.person) + '</td><td>' + own + '</td><td>' + using + '</td>' +
+    return '<tr><td>' + esc(p.displayName || p.person) + '</td><td>' + own + '</td><td>' + using + '</td>' +
       '<td>' + p.requests + '</td><td class="muted">' + esc(p.key ? p.key.fingerprint : '无 key') + '</td>' +
       '<td>' + (p.pendingExit ? '<span class="warn">有</span>' : '<span class="muted">—</span>') + '</td></tr>'
   }).join('') : '<tr><td colspan="6" class="empty">还没有人</td></tr>'
@@ -472,7 +472,7 @@ function pct(q) {
 }
 
 function render() {
-  $('who').textContent = me.person
+  $('who').textContent = me.displayName || me.person
   $('keyline').textContent = me.key ? 'key 指纹 ' + me.key.fingerprint : ''
   $('reqs').textContent = me.requests
   $('using').textContent = me.assignedTo ? (me.assignedReason === 'own' ? '自己的号' : '借别人的号') : '—'

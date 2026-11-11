@@ -14,6 +14,7 @@ const empty = () => ({
   sessions: [],
   exitRequests: [],
   usage: {},
+  people: {},
 })
 
 let state = load()
@@ -22,7 +23,22 @@ function load() {
   if (!existsSync(STATE_PATH)) return empty()
   try {
     const parsed = JSON.parse(readFileSync(STATE_PATH, 'utf8'))
-    return { ...empty(), ...parsed }
+    const merged = { ...empty(), ...parsed }
+    // v3 → v4：person 从「名字」变成「随机 id」，老数据补显示名
+    merged.people ??= {}
+    const known = new Set([
+      ...merged.keys.map((k) => k.person),
+      ...merged.accounts.map((a) => a.owner),
+      ...(merged.sessions ?? []).map((x) => x.person),
+      ...(merged.exitRequests ?? []).map((x) => x.person),
+      ...Object.keys(merged.usage ?? {}),
+    ])
+    for (const person of known) {
+      if (person && !merged.people[person]) {
+        merged.people[person] = { id: person, displayName: person, createdAt: new Date().toISOString() }
+      }
+    }
+    return merged
   } catch (err) {
     throw new Error(`state.json 解析失败，拒绝以空状态启动（会丢号）: ${err.message}`)
   }
@@ -59,6 +75,18 @@ export function flush() {
     flushTimer = null
   }
   if (dirty) persist()
+}
+
+// 身份是随机 id，名字只是显示用。同名无害，也不再需要「先占名字」。
+export function createPerson(displayName) {
+  const id = `p_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`
+  state.people[id] = { id, displayName: String(displayName ?? '').trim() || id, createdAt: new Date().toISOString() }
+  persist()
+  return state.people[id]
+}
+
+export function personInfo(id) {
+  return state.people[id] ?? { id, displayName: id }
 }
 
 export function dataDir() {
@@ -418,12 +446,15 @@ export function keyFingerprintFor(person) {
 export function listPeople() {
   const people = new Set([...state.keys.map((k) => k.person), ...state.accounts.map((a) => a.owner)])
   const now = Date.now()
-  return [...people].filter(Boolean).sort().map((person) => {
+  return [...people].filter(Boolean)
+    .sort((a, b) => personInfo(a).displayName.localeCompare(personInfo(b).displayName))
+    .map((person) => {
     const key = keyFingerprintFor(person)
     const accounts = state.accounts.filter((a) => a.owner === person)
     const assignment = assignmentFor(person)
     return {
       person,
+      displayName: personInfo(person).displayName,
       key,
       accounts: accounts.map((a) => ({
         id: a.id,
