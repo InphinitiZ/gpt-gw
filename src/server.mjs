@@ -6,6 +6,7 @@ import {
   addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount, flush,
 } from './store.mjs'
 import { proxyResponses, freshAccount, setFault, clearFaults } from './forward.mjs'
+import { startProber, probeOnce } from './probe.mjs'
 
 const HOST = process.env.GW_HOST ?? '127.0.0.1'
 const PORT = Number(process.env.GW_PORT ?? 8787)
@@ -261,6 +262,9 @@ const server = createServer(async (req, res) => {
 
   try {
     // 只在 GW_DEBUG=1 时挂载，用来验证 429/401 分支
+    if (DEBUG && req.method === 'POST' && url.pathname === '/api/debug/probe') {
+      return json(res, 200, { results: await probeOnce() })
+    }
     if (DEBUG && req.method === 'POST' && url.pathname === '/api/debug/fault') {
       const body = await readBody(req)
       if (body.clear) {
@@ -331,5 +335,6 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 
 server.listen(PORT, HOST, () => {
-  console.log(`alpha-mind enrollment on http://${HOST}:${PORT}/enroll`)
+  console.log(`alpha-mind on http://${HOST}:${PORT}/enroll`)
+  startProber()
 })

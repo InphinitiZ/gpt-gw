@@ -116,6 +116,28 @@ export GPT_GW_KEY=gw_xxx
 `data/state.json` 里是明文的 refresh token（文件权限 0600）。这台机器被拷走等于池子被端走。
 上生产前至少做两件事：磁盘加密，或者把 `refreshToken` 字段换成 KMS/钥匙串加密后再落盘。
 
+## 退出托管与撤销
+
+**退出托管不碰上游授权。** 批准后只做三件事：摘号、撤销该人的 key 和会话、结束申请单。
+理由：实测 `POST /oauth/revoke` 是**按用户**撤销的，一次调用会让该账号在所有设备上的登录全部失效
+（refresh 返回 `refresh_token_invalidated`，access 返回 `token_revoked`）。对一次普通「退出」来说破坏力过大。
+
+真要终止授权，走管理员的**强制撤销**：调上游 revoke + 摘号，并明确告知会登出该账号所有设备。
+即使 revoke 失败也照样摘号——留着我们不再管理的凭据没有意义。
+
+## 存活与额度探针
+
+每 10 分钟（`GW_PROBE_INTERVAL_MS`）对每个非 `dead` 账号打一次 `GET /backend-api/wham/usage`：
+
+| 返回 | 判定 | 动作 |
+|---|---|---|
+| 200 | 正常 | 更新 `used_percent` |
+| 401 `token_expired` | access 过期 | 强刷后重试一次 |
+| 401 其他 / 刷新失败 | 已撤销 | 标记 `dead` |
+| 429 | 额度耗尽 | 冷却 |
+
+这样没人发请求时也能在 10 分钟内发现号挂了。账号状态机：`ok / dead / exhausted / unknown`。
+
 ## 故障注入与诊断
 
 默认不挂载，只有 `GW_DEBUG=1` 时才有：

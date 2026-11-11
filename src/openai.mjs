@@ -203,4 +203,75 @@ export async function fetchCodexModels(accessToken, accountId) {
   return (json.models ?? []).map((m) => m.slug).filter(Boolean)
 }
 
+// 额度探针：base 去掉 /codex 后拼 /wham/usage（跟 Codex CLI 的 PathStyle 一致）
+export function usageUrl(base = `${CHATGPT_BASE}/backend-api/codex`) {
+  return base.replace(/\/codex\/?$/, '') + '/wham/usage'
+}
+
+export async function fetchUsage(accessToken, accountId, { base } = {}) {
+  const res = await fetch(usageUrl(base), {
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'chatgpt-account-id': accountId,
+      originator: 'alpha-mind',
+      'user-agent': CODEX_UA,
+      accept: 'application/json',
+    },
+    signal: AbortSignal.timeout(15000),
+  })
+  const text = await res.text()
+  if (!res.ok) throw new UpstreamError(res.status, safeJson(text) ?? text.slice(0, 300))
+  return extractQuota(safeJson(text) ?? {})
+}
+
+function safeJson(text) {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+// 形如 { rate_limit: { primary_window: { used_percent }, secondary_window: {...} } }
+export function extractQuota(payload) {
+  const quota = {}
+  const windows = [payload.rate_limit ?? {}, ...(payload.additional_rate_limits ?? []).map((x) => x?.rate_limit ?? {})]
+  const pick = (name) => {
+    let used = null
+    let resetAfter = null
+    for (const w of windows) {
+      const win = w[name]
+      if (!win) continue
+      if (typeof win.used_percent === 'number') used = Math.max(used ?? 0, win.used_percent)
+      if (typeof win.reset_after_seconds === 'number') resetAfter = win.reset_after_seconds
+    }
+    return used === null && resetAfter === null ? null : { usedPercent: used, resetAfterSec: resetAfter }
+  }
+  const primary = pick('primary_window')
+  const secondary = pick('secondary_window')
+  if (primary) quota.primary = primary
+  if (secondary) quota.secondary = secondary
+  return Object.keys(quota).length ? quota : null
+}
+
+// 撤销一路授权。注意实测：这个接口是按用户撤销的，会把该账号所有设备的会话一起作废。
+export async function revokeToken(refreshToken) {
+  const body = new URLSearchParams({
+    token: refreshToken,
+    token_type_hint: 'refresh_token',
+    client_id: CLIENT_ID,
+  })
+  const res = await fetch(`${AUTH_BASE}/oauth/revoke`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      originator: 'alpha-mind',
+      'user-agent': CODEX_UA,
+    },
+    body,
+    signal: AbortSignal.timeout(20000),
+  })
+  return { status: res.status, ok: res.ok, body: (await res.text()).slice(0, 200) }
+}
+
 export const upstream = { AUTH_BASE, CHATGPT_BASE, CLIENT_ID }

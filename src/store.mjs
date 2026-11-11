@@ -188,6 +188,14 @@ export function saveDiagnostic(obj) {
   return path
 }
 
+export function accountsToProbe() {
+  return state.accounts.filter((a) => a.status !== 'dead')
+}
+
+export function accountById(id) {
+  return state.accounts.find((a) => a.id === id) ?? null
+}
+
 export function anyHealthyAccount() {
   return state.accounts.find((a) => isUsable(a)) ?? null
 }
