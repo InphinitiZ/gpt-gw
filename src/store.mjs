@@ -417,6 +417,7 @@ export function keyFingerprintFor(person) {
 
 export function listPeople() {
   const people = new Set([...state.keys.map((k) => k.person), ...state.accounts.map((a) => a.owner)])
+  const now = Date.now()
   return [...people].filter(Boolean).sort().map((person) => {
     const key = keyFingerprintFor(person)
     const accounts = state.accounts.filter((a) => a.owner === person)
@@ -429,6 +430,9 @@ export function listPeople() {
         label: a.label,
         email: a.email,
         status: a.status,
+        exhausted: Boolean(a.exhaustedUntil && a.exhaustedUntil > now),
+        quota: a.quota ?? null,
+        lastProbeAt: a.lastProbeAt ?? null,
         borrowed: borrowedByOthers(a),
       })),
       assignedTo: assignment?.accountId ?? null,

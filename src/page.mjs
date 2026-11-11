@@ -374,3 +374,155 @@ load()
 </body>
 </html>`
 }
+
+export function mePage() {
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>我的托管</title>
+<style>
+  :root { color-scheme: light dark; --fg:#111; --muted:#666; --line:#e3e3e3; --bg:#fff; --ok:#0a7c53; --bad:#c0392b; --warn:#b7791f; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e8e8e8; --muted:#999; --line:#2a2a2a; --bg:#111; --ok:#39d29a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:48px 20px 80px; }
+  h1 { font-size:21px; margin:0 0 4px; letter-spacing:-.01em; }
+  h2 { font-size:13px; color:var(--muted); margin:32px 0 10px; font-weight:600; }
+  .muted { color:var(--muted); }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .card { border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:10px; }
+  .row { display:flex; align-items:center; gap:10px; }
+  .grow { flex:1; }
+  .num { font:600 18px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  button { font:inherit; font-size:14px; padding:6px 12px; border-radius:7px; border:1px solid var(--line); background:transparent; color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--ok); border-color:var(--ok); color:#fff; }
+  button.danger { color:var(--bad); border-color:var(--bad); }
+  input { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--fg); width:100%; }
+  .empty { color:var(--muted); border:1px dashed var(--line); border-radius:10px; padding:20px; text-align:center; }
+  .pill { font-size:12px; padding:1px 8px; border-radius:99px; border:1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <div id="loading" class="muted">加载中…</div>
+
+  <section id="login" style="display:none">
+    <h1>我的托管</h1>
+    <p class="muted">用网关发你的 key 登录。</p>
+    <input id="keyin" type="password" placeholder="gw_...">
+    <div style="margin-top:12px"><button class="primary" id="loginbtn">登录</button></div>
+    <p id="loginerr" class="bad"></p>
+  </section>
+
+  <section id="panel" style="display:none">
+    <div class="row">
+      <h1 class="grow" id="who"></h1>
+      <button id="logout">退出登录</button>
+    </div>
+    <p class="muted" id="keyline" style="margin:2px 0 0"></p>
+
+    <h2>我托管的号</h2>
+    <div id="accounts"></div>
+
+    <h2>本周用量</h2>
+    <div class="card row">
+      <div class="grow">
+        <div class="num" id="reqs">0</div>
+        <div class="muted">次请求</div>
+      </div>
+      <div class="grow">
+        <div id="using" class="num" style="font-size:15px"></div>
+        <div class="muted">当前在用</div>
+      </div>
+    </div>
+
+    <h2>说明</h2>
+    <p class="muted" style="font-size:13px">
+      请求优先走你自己的号，用完了才借别人的。你自己用的部分不计入「被借」。
+      退出托管只是把号从池里拿走，不会影响你在任何设备上的 ChatGPT 登录。
+    </p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))
+let me = null
+
+function badge(a) {
+  if (a.exhausted) return '<span class="pill warn">额度用完</span>'
+  if (a.status === 'dead') return '<span class="pill bad">已失效</span>'
+  if (a.status === 'ok') return '<span class="pill ok">在池中</span>'
+  return '<span class="pill">' + esc(a.status || '未知') + '</span>'
+}
+
+function pct(q) {
+  if (!q || !q.primary) return ''
+  return q.primary.usedPercent != null ? '本周已用 ' + q.primary.usedPercent + '%' : ''
+}
+
+function render() {
+  $('who').textContent = me.person
+  $('keyline').textContent = me.key ? 'key 指纹 ' + me.key.fingerprint : ''
+  $('reqs').textContent = me.requests
+  $('using').textContent = me.assignedTo ? (me.assignedReason === 'own' ? '自己的号' : '借别人的号') : '—'
+
+  const list = me.accounts || []
+  $('accounts').innerHTML = list.length ? list.map((a) => {
+    const act = me.pendingExit
+      ? '<span class="muted" style="font-size:13px">退出申请审批中</span>'
+      : '<button class="danger" data-exit="' + esc(a.id) + '">退出托管</button>'
+    return '<div class="card"><div class="row">' +
+      '<div class="grow"><strong>' + esc(a.label) + '</strong><div class="muted" style="font-size:13px">' +
+      '被他人借用 ' + (a.borrowed || 0) + ' 次' + (pct(a.quota) ? ' · ' + esc(pct(a.quota)) : '') + '</div></div>' +
+      badge(a) + act + '</div></div>'
+  }).join('') : '<div class="empty">你还没有托管任何号</div>'
+}
+
+async function load() {
+  const r = await fetch('/api/me')
+  if (r.status === 401) {
+    $('loading').style.display = 'none'
+    $('login').style.display = 'block'
+    return
+  }
+  me = await r.json()
+  $('loading').style.display = 'none'
+  $('panel').style.display = 'block'
+  render()
+}
+
+document.addEventListener('click', async (e) => {
+  const id = e.target.dataset.exit
+  if (!id) return
+  const reason = prompt('退出原因（可选）') ?? ''
+  const r = await fetch('/api/exit-request', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ accountId: id, reason })
+  })
+  if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.message || '提交失败'); return }
+  load()
+})
+
+$('loginbtn').onclick = async () => {
+  const r = await fetch('/api/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: $('keyin').value.trim() })
+  })
+  if (!r.ok) { $('loginerr').textContent = 'key 不对'; return }
+  $('login').style.display = 'none'
+  load()
+}
+
+$('logout').onclick = async () => {
+  await fetch('/api/logout', { method: 'POST' })
+  location.reload()
+}
+
+load()
+</script>
+</body>
+</html>`
+}

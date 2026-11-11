@@ -3,6 +3,7 @@
 
 import {
   accountById,
+  accountsByOwner,
   decideExitRequest,
   listExitRequests,
   removeAccount,
@@ -27,7 +28,10 @@ export function approveExit({ requestId, admin, note = null }) {
 
   const account = request.accountId ? accountById(request.accountId) : null
   if (account) removeAccount(account.id)
-  const revokedKeys = revokeKeyFor(request.person)
+
+  // 只在「一个号都不剩」时才撤销 key：还有号在池里就仍然算有贡献
+  const remaining = accountsByOwner(request.person)
+  const revokedKeys = remaining.length === 0 ? revokeKeyFor(request.person) : 0
   const decided = decideExitRequest(requestId, { status: 'approved', note, admin })
 
   return {
@@ -35,6 +39,7 @@ export function approveExit({ requestId, admin, note = null }) {
     request: decided,
     removedAccount: account ? { id: account.id, label: account.label } : null,
     revokedKeys,
+    remainingAccounts: remaining.length,
   }
 }
 

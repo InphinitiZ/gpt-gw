@@ -3,12 +3,13 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { timingSafeEqual } from 'node:crypto'
-import { enrollPage, adminPage } from './page.mjs'
+import { enrollPage, adminPage, mePage } from './page.mjs'
 import { startDeviceCode, pollDeviceCode, exchangeDeviceCode, extractAccountId, extractEmail, describeTokenShape, fetchCodexModels, UpstreamError } from './openai.mjs'
 import {
   addAccount, rotateKey, listAccounts, listKeys, keyByHash, saveDiagnostic, anyHealthyAccount, flush,
   dataDir, listPeople, listExitRequests,
   createSession, sessionById, accountByAccountId, personHasKey, ensureKey, deleteSession, usageFor,
+  accountById, createExitRequest, cancelExitRequest, pendingExitFor,
 } from './store.mjs'
 import { proxyResponses, freshAccount, setFault, clearFaults } from './forward.mjs'
 import { startProber, probeOnce } from './probe.mjs'
@@ -435,6 +436,28 @@ const server = createServer(async (req, res) => {
         requests: usageFor(user.person).requests,
         pendingExit: me?.pendingExit ?? false,
       })
+    }
+    if (req.method === 'POST' && url.pathname === '/api/exit-request') {
+      const user = currentUser(req)
+      if (!user) return json(res, 401, { message: '未登录' })
+      const body = await readBody(req)
+      const account = body.accountId ? accountById(body.accountId) : null
+      if (!account || account.owner !== user.person) return json(res, 400, { message: '这不是你的号' })
+      const request = createExitRequest({
+        person: user.person,
+        accountId: account.id,
+        reason: String(body.reason ?? '').slice(0, 500),
+      })
+      return json(res, 200, { request })
+    }
+    if (req.method === 'DELETE' && url.pathname === '/api/exit-request') {
+      const user = currentUser(req)
+      if (!user) return json(res, 401, { message: '未登录' })
+      return json(res, 200, { ok: true, cancelled: Boolean(cancelExitRequest(user.person)) })
+    }
+    if (req.method === 'GET' && url.pathname === '/me') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      return res.end(mePage())
     }
     // ── 管理端 ──────────────────────────────────────────────────────────
     if (req.method === 'POST' && url.pathname === '/admin/login') {
