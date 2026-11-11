@@ -86,6 +86,24 @@ node src/server.mjs          # 默认 http://127.0.0.1:8787/ ，可用 GW_PORT �
 注意：上游要求 `input` 必须是数组（`[{"type":"message",...}]`），传字符串会直接 400。
 Codex 和 SDK 都发数组，手搓 curl 时容易踩。
 
+## 部署在网络受限的环境
+
+公司网络的出口如果被 Cloudflare 挑战（`auth.openai.com` 返回 `Just a moment...`），网关会发不出设备授权请求。
+先自检：
+
+```bash
+curl -sI https://auth.openai.com/codex/device   # 看到 302 就正常，看到挑战页就是被拦
+```
+
+如果本机 `curl` 能通而网关不通，通常是**代理**：curl 读 `*_proxy`，Node 默认不读。
+
+- **Node 24**：`node --use-env-proxy src/server.mjs`（配合 `HTTPS_PROXY` 环境变量）
+- **Node 22**：先 `npm i undici`，然后正常启动；进程检测到 `*_proxy` 会自动接管
+- 两者都没有时，启动日志会打印明确提示，不会静默失败
+
+注意代理是全局生效的，SSE 长连接也会走代理。部分企业代理会缓冲或断开空闲连接，
+表现为对话卡住；真遇到需要改成只给 auth 请求走代理。
+
 ## 入口
 
 | 路径 | 行为 |

@@ -1,4 +1,21 @@
 import { createServer } from 'node:http'
+
+// Node 22 的 fetch 不读 *_proxy 环境变量；Node 24 要加 --use-env-proxy 才读。
+// 这里做一次兜底：装了 undici 就按环境变量接管全局 dispatcher，没装就提示。
+const proxyEnv = process.env.HTTPS_PROXY ?? process.env.https_proxy ?? process.env.HTTP_PROXY ?? process.env.http_proxy
+if (proxyEnv) {
+  try {
+    const { setGlobalDispatcher, EnvHttpProxyAgent } = await import('undici')
+    setGlobalDispatcher(new EnvHttpProxyAgent())
+    console.log(`proxy: 已启用（${proxyEnv}）`)
+  } catch {
+    console.warn(
+      `proxy: 检测到 *_proxy=${proxyEnv}，但当前 Node 没有可用的代理支持。\n` +
+        '  · Node 24：用 node --use-env-proxy src/server.mjs 启动\n' +
+        '  · Node 22：先 npm i undici，本进程会自动接管'
+    )
+  }
+}
 import { randomUUID, randomBytes, createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { resolve } from 'node:path'
