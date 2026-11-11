@@ -1,4 +1,4 @@
-# alpha-mind
+# gpt-gw
 
 ChatGPT 订阅号共享网关（仓库目录仍叫 `gpt-gw`）。
 
@@ -44,7 +44,7 @@ node src/server.mjs          # 默认 http://127.0.0.1:8787/ ，可用 GW_PORT �
 
 - 自己的号优先，用完才借别人的，不主动跨账号分摊
 - 借号后粘住不来回跳，让每个号的流量看起来连续
-- `originator` 用 `alpha-mind` 自己的名字，不冒充 `codex_cli_rs`
+- `originator` 用 `alpha-mind`，不冒充 `codex_cli_rs`
 - `store: false`，不往号主的历史里写对话
 - 退出不调 revoke（实测会登出该账号全部设备），不惊动号主其它登录
 
@@ -104,10 +104,10 @@ Chatbox 四个字段、curl 示例，以及三个坑（`input` 必须是数组�
 
 ```toml
 # ~/.codex/config.toml
-model_provider = "alpha-mind"
+model_provider = "gpt-gw"
 
-[model_providers.alpha-mind]
-name = "alpha-mind"
+[model_providers.gpt-gw]
+name = "gpt-gw"
 base_url = "http://gw.corp:8787/v1"
 env_key = "GPT_GW_KEY"
 wire_api = "responses"
