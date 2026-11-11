@@ -90,11 +90,12 @@ async function readRaw(req, limit = 64 * 1024 * 1024) {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-function newSession(name) {
+function newSession({ person = null, displayName = null }) {
   const sid = randomUUID()
   const session = {
     sid,
-    name,
+    person,
+    displayName,
     createdAt: Date.now(),
     expiresAt: Date.now() + SESSION_TTL_MS,
     status: 'pending',
@@ -118,15 +119,15 @@ async function handleStart(req, res) {
   const body = await readBody(req)
   const user = currentUser(req)
 
-  let person = user?.person ?? null
+  const person = user?.person ?? null
+  let displayName = null
   if (!person) {
-    // 身份是随机 id，名字只是显示名：重名无害，也不需要先占名字。
-    const displayName = String(body.name ?? '').trim()
+    // 先只记下名字，等授权真的成功再建身份——否则中途取消/失败会留下一条没 key 没号的孤儿记录
+    displayName = String(body.name ?? '').trim()
     if (!displayName) return json(res, 400, { message: '缺少名字' })
-    person = createPerson(displayName).id
   }
 
-  const session = newSession(person)
+  const session = newSession({ person, displayName })
   try {
     const device = await startDeviceCode()
     session.deviceAuthId = device.deviceAuthId
@@ -213,15 +214,20 @@ async function handleStatus(req, res, url) {
 
     const email = extractEmail(tokens.id_token, tokens.access_token)
 
-    // 一个账号只能有一个托管人
+    // 一个账号只能有一个托管人。session.person 为 null 表示这是新用户，
+    // 任何已存在的账号都属于别人。
     const existing = accountByAccountId(accountId)
-    if (existing && existing.owner !== session.name) {
+    if (existing && existing.owner !== session.person) {
       failSession(session, `这个 ChatGPT 账号已经由 ${personInfo(existing.owner).displayName} 托管了。要换人得先让对方申请退出。`)
       return json(res, 200, { status: 'error', ...session.error })
     }
 
+    // 走到这里授权才算真的成功，现在才建身份（避免孤儿 people 记录）
+    const person = session.person ?? createPerson(session.displayName).id
+    session.person = person
+
     const { account, created } = addAccount({
-      owner: session.name,
+      owner: person,
       email,
       accountId,
       refreshToken: tokens.refresh_token,
@@ -230,21 +236,22 @@ async function handleStatus(req, res, url) {
     })
 
     // 已经有 key 的人追加账号：沿用原 key，不换新的
-    const hadKey = personHasKey(session.name)
+    const hadKey = personHasKey(person)
     const plaintextKey = hadKey ? null : `gw_${randomBytes(24).toString('hex')}`
     const ensured = ensureKey({
-      hash: plaintextKey ? hashKey(plaintextKey) : `reuse:${session.name}`,
-      person: session.name,
+      hash: plaintextKey ? hashKey(plaintextKey) : `reuse:${person}`,
+      person,
       accountId,
     })
 
     // 登录态：enroll 完成即为这个人建立会话
-    const userSession = createSession(session.name)
+    const userSession = createSession(person)
     setUserCookie(res, userSession.id)
 
     session.status = 'complete'
     session.result = {
-      person: session.name,
+      person,
+      displayName: personInfo(person).displayName,
       key: plaintextKey,
       keyCreated: !hadKey,
       keyFingerprint: ensured.key.hash.slice(0, 8),
