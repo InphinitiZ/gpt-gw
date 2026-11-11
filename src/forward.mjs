@@ -108,7 +108,7 @@ export async function freshAccount(account, { force = false } = {}) {
 
 // 身份头。官方客户端用 codex_cli_rs，某些第三方 harness 用自己的名字也能通过，
 // 用自己的名字比冒充官方客户端干净（风控画像更真实）。
-const CLIENT_LABEL = process.env.GW_CLIENT_LABEL ?? 'alpha-mind'
+const CLIENT_LABEL = process.env.GW_CLIENT_LABEL ?? 'gpt-gw'
 const ORIGINATOR = process.env.GW_ORIGINATOR ?? CLIENT_LABEL
 const CLIENT_UA = process.env.GW_CLIENT_UA ?? `${CLIENT_LABEL}/0.1.0`
 

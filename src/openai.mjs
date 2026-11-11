@@ -213,7 +213,7 @@ export async function fetchUsage(accessToken, accountId, { base } = {}) {
     headers: {
       authorization: `Bearer ${accessToken}`,
       'chatgpt-account-id': accountId,
-      originator: 'alpha-mind',
+      originator: 'gpt-gw',
       'user-agent': CODEX_UA,
       accept: 'application/json',
     },
@@ -278,7 +278,7 @@ export async function revokeToken(refreshToken) {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
-      originator: 'alpha-mind',
+      originator: 'gpt-gw',
       'user-agent': CODEX_UA,
     },
     body,

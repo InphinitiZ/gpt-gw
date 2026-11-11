@@ -417,7 +417,7 @@ const server = createServer(async (req, res) => {
       const ids = await codexModelIds()
       return json(res, 200, {
         object: 'list',
-        data: ids.map((id) => ({ id, object: 'model', created: 0, owned_by: 'alpha-mind' })),
+        data: ids.map((id) => ({ id, object: 'model', created: 0, owned_by: 'gpt-gw' })),
       })
     }
     // ── 用户端 ──────────────────────────────────────────────────────────
@@ -537,6 +537,6 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 
 server.listen(PORT, HOST, () => {
-  console.log(`alpha-mind on http://${HOST}:${PORT}/enroll`)
+  console.log(`gpt-gw on http://${HOST}:${PORT}/enroll`)
   startProber()
 })

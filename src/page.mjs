@@ -9,10 +9,10 @@ Authorization: Bearer <span data-fill="key"></span></pre>
 
   <h3>Codex CLI</h3>
   <pre># ~/.codex/config.toml
-model_provider = "alpha-mind"
+model_provider = "gpt-gw"
 
-[model_providers.alpha-mind]
-name = "alpha-mind"
+[model_providers.gpt-gw]
+name = "gpt-gw"
 base_url = "<span data-fill="origin"></span>/v1"
 env_key = "GPT_GW_KEY"
 wire_api = "responses"
@@ -129,10 +129,15 @@ export function enrollPage() {
   <section id="s4">
     <p class="err" id="errmsg"></p>
     <div id="fallback" style="display:none">
-      <p>网关的出口 IP 被 Cloudflare 拦了，跑不了设备授权。改成在你自己的终端里跑：</p>
-      <pre>codex login          # 用要上交的号登录
-npx alpha-mind enroll     # 读取 ~/.codex/auth.json 并上传</pre>
-      <p class="hint">在你自己机器上发起，走你的网络，不会被拦。</p>
+      <p>网关的出口 IP 被 Cloudflare 拦了，发不出设备授权请求。三个办法，按推荐顺序：</p>
+      <ol>
+        <li>给网关配代理后重启：<br>
+          <code class="inline">HTTPS_PROXY=http://代理地址 node --use-env-proxy src/server.mjs</code></li>
+        <li>把网关挪到能直连 <code class="inline">auth.openai.com</code> 的网络</li>
+        <li>等你所在机器上跑本地授权（还没实现）</li>
+      </ol>
+      <p class="hint">判断标准：在网关那台机器上 <code class="inline">curl -sI https://auth.openai.com/codex/device</code>
+      能返回 200 而不是 <code class="inline">Just a moment...</code>，就说明出口没问题。</p>
     </div>
     <div id="loginbox" style="display:none">
       <p>这个名称已经有人用过了。如果这是你，用原来的 key 登录后再加号：</p>
@@ -260,7 +265,7 @@ export function adminPage() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>alpha-mind 管理台</title>
+<title>gpt-gw 管理台</title>
 <style>
   :root { color-scheme: light dark; --fg:#111; --muted:#666; --line:#e3e3e3; --bg:#fff; --ok:#0a7c53; --bad:#c0392b; --warn:#b7791f; }
   @media (prefers-color-scheme: dark) { :root { --fg:#e8e8e8; --muted:#999; --line:#2a2a2a; --bg:#111; --ok:#39d29a; } }
@@ -286,7 +291,7 @@ export function adminPage() {
 </head>
 <body>
 <main>
-  <h1>alpha-mind 管理台</h1>
+  <h1>gpt-gw 管理台</h1>
   <p class="muted" style="margin:0 0 24px">账号状态、托管人、退出申请</p>
 
   <section id="login" style="display:none">
@@ -610,7 +615,7 @@ export function landingPage() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>alpha-mind</title>
+<title>gpt-gw</title>
 <style>
   :root { color-scheme: light dark; --fg:#111; --muted:#666; --line:#e3e3e3; --bg:#fff; --ok:#0a7c53; }
   @media (prefers-color-scheme: dark) { :root { --fg:#e8e8e8; --muted:#999; --line:#2a2a2a; --bg:#111; --ok:#39d29a; } }
@@ -631,7 +636,7 @@ export function landingPage() {
 </head>
 <body>
 <main>
-  <h1>alpha-mind</h1>
+  <h1>gpt-gw</h1>
   <p class="lede">把 ChatGPT 订阅号放进共享池，按需要分配给团队使用。</p>
 
   <div class="card">

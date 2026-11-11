@@ -44,7 +44,7 @@ node src/server.mjs          # 默认 http://127.0.0.1:8787/ ，可用 GW_PORT �
 
 - 自己的号优先，用完才借别人的，不主动跨账号分摊
 - 借号后粘住不来回跳，让每个号的流量看起来连续
-- `originator` 用 `alpha-mind`，不冒充 `codex_cli_rs`
+- `originator` 用 `gpt-gw`，不冒充 `codex_cli_rs`
 - `store: false`，不往号主的历史里写对话
 - 退出不调 revoke（实测会登出该账号全部设备），不惊动号主其它登录
 
@@ -252,7 +252,7 @@ curl -X POST localhost:8788/api/debug/fault -d '{"clear":true}'
 | `GW_CHATGPT_BASE` | `https://chatgpt.com` | 上游 |
 | `GW_AUTH_BASE` | `https://auth.openai.com` | OAuth |
 | `GW_MODELS` | `gpt-6-astra` | 模型目录拉取失败时的兜底列表 |
-| `GW_CLIENT_LABEL` | `alpha-mind` | 上游身份：originator 与 UA 的前缀 |
+| `GW_CLIENT_LABEL` | `gpt-gw` | 上游身份：originator 与 UA 的前缀 |
 | `GW_ORIGINATOR` | 同 `GW_CLIENT_LABEL` | 单独覆盖 `originator` 头 |
 | `GW_CLIENT_UA` | `<label>/0.1.0` | 单独覆盖 `User-Agent` |
 | `GW_FORCE_STORE_FALSE` | `1` | 设 `0` 关闭强制 |
