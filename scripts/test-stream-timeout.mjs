@@ -58,6 +58,7 @@ writeFileSync(
 // ── 假上游 ────────────────────────────────────────────────────────────────
 let mode = 'stall'
 let upstreamClosed = 0
+let killFired = false
 
 const fake = createServer((req, res) => {
   if (req.method !== 'POST') {
@@ -71,7 +72,10 @@ const fake = createServer((req, res) => {
   res.write('event: response.created\ndata: {"type":"response.created"}\n\n')
 
   if (mode === 'kill') {
-    setTimeout(() => req.socket.destroy(), 200)
+    setTimeout(() => {
+      killFired = true
+      req.socket.destroy()
+    }, 200)
   }
   // stall 模式：故意既不 end 也不再写
 })
@@ -208,10 +212,13 @@ console.log('B. 客户端中途断开')
 console.log('C. 上游中途断开连接')
 {
   mode = 'kill'
+  killFired = false
   const logMark = gwLog.length
   const r = await post()
   check(r.bytes > 0, '断开前已收到数据', `${r.bytes} 字节`)
-  check(r.error !== null || r.elapsed < TIMEOUT_MS + SLACK_MS, '连接被中断', `${r.elapsed}ms`)
+  check(killFired, '假上游确实执行了主动断连')
+  check(r.error !== null, '客户端读取响应体报错', r.error ? r.error.name : '无错误（说明是正常结束）')
+  check(r.elapsed < TIMEOUT_MS - 300, '早于网关超时中断', `${r.elapsed}ms < ${TIMEOUT_MS - 300}ms`)
   check(await waitLog(logMark, /stream 中断/), '日志记录了流中断')
   await sleep(300)
   check(await alive(), '进程存活，/healthz 正常')
