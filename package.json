@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.mjs",
-    "probe": "node scripts/probe-deviceauth.mjs"
+    "probe": "node scripts/probe-deviceauth.mjs",
+    "test:stream": "node scripts/test-stream-timeout.mjs"
   }
 }

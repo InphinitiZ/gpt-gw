@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { appendFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { refreshTokens, extractAccountId, claimsOf, UpstreamError, upstream } from './openai.mjs'
@@ -154,12 +155,12 @@ function upstreamHeaders(account, clientHeaders, streaming) {
   return headers
 }
 
-async function callUpstream(account, payload, streaming, clientHeaders) {
+async function callUpstream(account, payload, streaming, clientHeaders, signal) {
   return fetch(`${upstream.CHATGPT_BASE}/backend-api/codex/responses`, {
     method: 'POST',
     headers: upstreamHeaders(account, clientHeaders, streaming),
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(Number(process.env.GW_UPSTREAM_TIMEOUT_MS ?? 900_000)),
+    signal,
   })
 }
 
@@ -193,6 +194,18 @@ export async function proxyResponses(req, res, person, rawBody) {
   if (FORCE_STORE_FALSE) payload.store = false
 
   const streaming = payload.stream !== false
+
+  // 超时信号要覆盖整个响应体的读取，而不只是拿到响应头；
+  // 客户端断开时也要主动取消上游，避免流和监听器泄漏。
+  const timeoutMs = Number(process.env.GW_UPSTREAM_TIMEOUT_MS ?? 900_000)
+  const clientGone = new AbortController()
+  const onClose = () => {
+    if (!res.writableEnded) clientGone.abort(new Error('client disconnected'))
+  }
+  res.on('close', onClose)
+  res.once('finish', () => res.off('close', onClose))
+  const signal = AbortSignal.any([AbortSignal.timeout(timeoutMs), clientGone.signal])
+
   let { account } = pickAccount(person)
   if (!account) return sendError(res, 503, openaiError('池里没有可用账号', 'insufficient_quota'))
   if (!payload.model && account.defaultModel) payload.model = account.defaultModel
@@ -224,7 +237,7 @@ export async function proxyResponses(req, res, person, rawBody) {
       })
     } else {
       try {
-        upstreamRes = await callUpstream(account, payload, streaming, req.headers)
+        upstreamRes = await callUpstream(account, payload, streaming, req.headers, signal)
       } catch (err) {
         return sendError(res, 504, openaiError(`上游不可达: ${err.message}`, 'gateway_error'))
       }
@@ -282,7 +295,16 @@ export async function proxyResponses(req, res, person, rawBody) {
     })
 
     if (!upstreamRes.body) return res.end()
-    Readable.fromWeb(upstreamRes.body).pipe(res)
+
+    // pipe() 不转发源流的 error：上游超时/中断时 Readable 会 emit 'error'，
+    // 没有监听器就是未捕获异常，整个进程退出。pipeline 会正确传播并销毁两端。
+    try {
+      await pipeline(Readable.fromWeb(upstreamRes.body), res)
+    } catch (err) {
+      console.warn(`stream 中断 account=${account.id}: ${err?.name || ''} ${err?.message || err}`)
+      // 响应头已经发出去了，不能再写 JSON 错误页，只能断掉这条连接
+      if (!res.writableEnded && !res.destroyed) res.destroy()
+    }
     return
   }
 

@@ -275,6 +275,28 @@ wire_api = "responses"
 
 这样没人发请求时也能在 10 分钟内发现号挂了。账号状态机：`ok / dead / exhausted / unknown`。
 
+## 流式响应中断（曾导致进程崩溃）
+
+上游返回响应头之后，响应体仍可能在传输中途超时或断开。历史版本用
+`Readable.fromWeb(body).pipe(res)` 转发——`pipe()` **不转发源流的 error**，
+超时触发时 Readable 发出无人监听的 `error`，Node 整个进程退出（外部表现为 8787 端口不再监听）。
+
+现在的处理：
+
+- 改用 `pipeline()`，错误会被正确传播并销毁两端
+- 超时信号覆盖**整个响应体读取**，不只是拿到响应头：`AbortSignal.any([timeout, clientGone])`
+- 响应头已经发出时，只断开连接并记日志，不再尝试写 JSON 错误页
+- 客户端断开时主动取消上游请求，避免流和监听器泄漏
+
+回归测试：
+
+```bash
+node scripts/test-stream-timeout.mjs   # 退出码 0 = 通过
+```
+
+它起一个“给响应头 + 一段数据但永不结束”的假上游，把 `GW_UPSTREAM_TIMEOUT_MS` 调到 1.2s，
+断言进程仍存活、`/healthz` 正常、日志里出现 `stream 中断`。旧写法跑这个测试会直接退出码 1。
+
 ## 故障注入与诊断
 
 默认不挂载，只有 `GW_DEBUG=1` 时才有：
